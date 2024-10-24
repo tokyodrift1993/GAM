@@ -25,7 +25,7 @@ https://github.com/GAM-team/GAM/wiki
 """
 
 __author__ = 'GAM Team <google-apps-manager@googlegroups.com>'
-__version__ = '7.00.25'
+__version__ = '7.00.29'
 __license__ = 'Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)'
 
 #pylint: disable=wrong-import-position
@@ -3671,7 +3671,7 @@ def SetGlobalVariables():
     dirPath = os.path.expanduser(_stripStringQuotes(GM.Globals[GM.PARSER].get(sectionName, itemName)))
     if (not dirPath) and (itemName in {GC.GMAIL_CSE_INCERT_DIR, GC.GMAIL_CSE_INKEY_DIR}):
       return dirPath
-    if (not dirPath) or (not os.path.isabs(dirPath)):
+    if (not dirPath) or (not os.path.isabs(dirPath) and dirPath != '.'):
       if (sectionName != configparser.DEFAULTSECT) and (GM.Globals[GM.PARSER].has_option(sectionName, itemName)):
         dirPath = os.path.join(os.path.expanduser(_stripStringQuotes(GM.Globals[GM.PARSER].get(configparser.DEFAULTSECT, itemName))), dirPath)
       if not os.path.isabs(dirPath):
@@ -10556,7 +10556,12 @@ Continue to authorization by entering a 'c'
   else:
     i = 0
     for a_scope in scopesList:
-      selectedScopes[i] = ' ' if a_scope.get('offByDefault', False) else '*'
+      if a_scope.get('offByDefault'):
+        selectedScopes[i] = ' '
+      elif a_scope.get('roByDefault'):
+        selectedScopes[i] = 'R'
+      else:
+        selectedScopes[i] = '*'
       i += 1
   prompt = f'\nPlease enter 0-{numScopes-1}[a|r] or {"|".join(OAUTH2_CMDS)}: '
   while True:
@@ -35082,6 +35087,121 @@ def updateFieldsForCIGroupMatchPatterns(matchPatterns, fieldsList, csvPF=None):
       else:
         fieldsList.append(field)
 
+CIPOLICY_TIME_OBJECTS = {'createTime', 'updateTime'}
+
+# gam print policies [todrive <ToDriveAttribute>*]
+#	[(filter <String>)|(name <PolicyName>)]  [nowarnings]
+#	[formatjson [quotechar <Character>]]
+# gam show policies
+#	[(filter <String>)|(name <PolicyName>)]  [nowarnings]
+#	[formatjson]
+def doPrintShowCIPolicies():
+
+  def _showPolicy(policy, FJQC, i=0, count=0):
+    if FJQC is not None and FJQC.formatJSON:
+      printLine(json.dumps(cleanJSON(policy, timeObjects=CIPOLICY_TIME_OBJECTS),
+                           ensure_ascii=False,
+                           sort_keys=True))
+      return
+    printEntity([Ent.POLICY, policy['name']], i, count)
+    Ind.Increment()
+    policy.pop('name')
+    showJSON(None, policy, timeObjects=CIPOLICY_TIME_OBJECTS)
+    if not pname:
+      printBlankLine()
+    Ind.Decrement()
+
+  def _printPolicy(policy):
+    row = flattenJSON(policy, timeObjects=CIPOLICY_TIME_OBJECTS)
+    if not FJQC.formatJSON:
+      csvPF.WriteRowTitles(row)
+    elif csvPF.CheckRowTitles(row):
+      csvPF.WriteRowNoFilter({'name': policy['name'],
+                              'JSON': json.dumps(cleanJSON(policy, timeObjects=CIPOLICY_TIME_OBJECTS),
+                                                 ensure_ascii=False,
+                                                 sort_keys=True)})
+
+  # Policies where GAM should offer additional guidance and information
+  warnings = {
+          'settings/drive_and_docs.external_sharing': {
+              'warningType': 'SUPERSEDED_POLICY',
+              'warningMessage': 'CAUTION: Drive Sharing settings are superseded by Drive Trust Rules if Trust Rules has been enabled for your domain. Drive Trust Rule settings are not available in the Policy API today so GAM is not able to check if Trust Rules is enabled and if the settings/drive_and_docs.external_sharing policies are actually in effect for your domain. If Drive Trust Rules is enabled for your domain then this settings/drive_and_docs.external_sharing policy does not accurately reflect your current Drive sharing settings.'
+              }
+          }
+  groups_ci = buildGAPIObject(API.CLOUDIDENTITY_GROUPS)
+  ci = buildGAPIObject(API.CLOUDIDENTITY_POLICY)
+  cd = buildGAPIObject(API.DIRECTORY)
+  csvPF = CSVPrintFile(['name']) if Act.csvFormat() else None
+  FJQC = FormatJSONQuoteChar(csvPF)
+  ifilter = pname = None
+  add_warnings = True
+  while Cmd.ArgumentsRemaining():
+    myarg = getArgument()
+    if csvPF and myarg == 'todrive':
+      csvPF.GetTodriveParameters()
+    elif myarg == 'filter':
+      ifilter = getString(Cmd.OB_STRING)
+    elif myarg == 'name':
+      pname = getString(Cmd.OB_STRING)
+    elif myarg == 'nowarnings':
+      add_warnings = False
+    else:
+      FJQC.GetFormatJSONQuoteChar(myarg, True)
+  if ifilter and pname:
+    usageErrorExit(Msg.ARE_MUTUALLY_EXCLUSIVE.format('filter', 'name'))
+  throwReasons = [GAPI.INVALID, GAPI.INVALID_ARGUMENT, GAPI.PERMISSION_DENIED, GAPI.INTERNAL_ERROR]
+  fields = 'name,policyQuery(group,orgUnit,sortOrder),type,setting'
+  if not pname:
+    printGettingAllAccountEntities(Ent.POLICY, ifilter)
+    pageMessage = getPageMessage()
+    try:
+      policies = callGAPIpages(ci.policies(), 'list', 'policies',
+                               throwReasons=throwReasons,
+                               pageMessage=pageMessage,
+                               filter=ifilter,
+                               fields=f'nextPageToken,policies({fields})',
+                               pageSize=100)
+    except (GAPI.invalid, GAPI.invalidArgument, GAPI.permissionDenied) as e:
+      entityActionFailedExit([Ent.POLICY, None], str(e))
+  else:
+    try:
+      policies = [callGAPI(ci.policies(), 'get',
+                           bailOnInternalError=True,
+                           throwReasons=throwReasons,
+                           name=pname,
+                           fields=fields)]
+    except (GAPI.invalid, GAPI.invalidArgument, GAPI.permissionDenied, GAPI.internalError) as e:
+      entityActionFailedExit([Ent.POLICY, pname], str(e))
+  # Google returns unordered results, sort them by setting type
+  policies = sorted(policies, key=lambda p: p.get('setting', {}).get('type', ''))
+  for policy in policies:
+    # convert any wordlists into spaced strings to reduce output complexity
+    if policy['setting']['type'] == 'settings/detector.word_list':
+      policy['setting']['value']['wordList'] = ' '.join(policy['setting']['value']['wordList']['words'])
+    # add any warnings to applicable policies
+    if add_warnings and policy['setting']['type'] in warnings:
+      policy['warning'] = warnings[policy['setting']['type']]
+    if groupId := policy['policyQuery'].get('group'):
+      _, _, policy['policyQuery']['groupEmail'] = convertGroupCloudIDToEmail(groups_ci, groupId)
+      # all groups are in the root OU so the orgUnit attribute is useless
+      policy['policyQuery'].pop('orgUnit', None)
+    elif orgId := policy['policyQuery'].get('orgUnit'):
+      policy['policyQuery']['orgUnitPath'] = convertOrgUnitIDtoPath(cd, orgId)
+  if not csvPF:
+    jcount = len(policies)
+    performActionNumItems(jcount, Ent.POLICY)
+    Ind.Increment()
+    j = 0
+    for policy in policies:
+      j += 1
+      _showPolicy(policy, FJQC, j, jcount)
+    Ind.Decrement()
+  else:
+    for policy in policies:
+      _printPolicy(policy)
+  if csvPF:
+    csvPF.writeCSVfile('Policies')
+
 PRINT_CIGROUPS_JSON_TITLES = ['email', 'JSON']
 
 # gam print cigroups [todrive <ToDriveAttribute>*]
@@ -54504,7 +54624,7 @@ def extendFileTree(fileTree, feed, DLP, stripCRsFromName):
         if f_file['mimeType'] == MIMETYPE_GA_FOLDER and f_file['name'] == MY_DRIVE:
           f_file['parents'] = []
         else:
-          f_file['parents'] = [ORPHANS] if f_file.get('ownedByMe', False) else [SHARED_WITHME]
+          f_file['parents'] = [ORPHANS] if f_file.get('ownedByMe', False) and 'sharedWithMeTime' not in f_file else [SHARED_WITHME]
       else:
         f_file['parents'] = [SHARED_DRIVES] if 'sharedWithMeTime' not in f_file else [SHARED_WITHME]
     if fileId not in fileTree:
@@ -54524,11 +54644,11 @@ def extendFileTreeParents(drive, fileTree, fields):
                         fileId=fileId, fields=fields, supportsAllDrives=True)
       if not result.get('parents', []):
         if not result.get('driveId'):
-          result['parents'] = [ORPHANS] if result.get('ownedByMe', False) else [SHARED_WITHME]
+          result['parents'] = [ORPHANS] if result.get('ownedByMe', False) and 'sharedWithMeTime' not in result else [SHARED_WITHME]
         else:
           if result['name'] == TEAM_DRIVE:
             result['name'] = _getSharedDriveNameFromId(drive, result['driveId'])
-          result['parents'] = [SHARED_DRIVES] if 'sharedWithMeTime' not in f_file else [SHARED_WITHME]
+          result['parents'] = [SHARED_DRIVES] if 'sharedWithMeTime' not in result else [SHARED_WITHME]
       fileTree[fileId]['info'] = result
       fileTree[fileId]['info']['noDisplay'] = True
       for parentId in result['parents']:
@@ -60723,7 +60843,8 @@ def collectOrphans(users):
                            pageMessage=getPageMessageForWhom(),
                            throwReasons=GAPI.DRIVE_USER_THROW_REASONS,
                            retryReasons=[GAPI.UNKNOWN_ERROR],
-                           q=query, orderBy=OBY.orderBy, fields='nextPageToken,files(id,name,parents,mimeType,capabilities(canMoveItemWithinDrive))',
+                           q=query, orderBy=OBY.orderBy,
+                           fields='nextPageToken,files(id,name,parents,mimeType,sharedWithMeTime,capabilities(canMoveItemWithinDrive))',
                            pageSize=GC.Values[GC.DRIVE_MAX_RESULTS])
       if targetUserFolderPattern:
         trgtUserFolderName = _substituteForUser(targetUserFolderPattern, user, userName)
@@ -60735,7 +60856,7 @@ def collectOrphans(users):
         continue
       orphanDriveFiles = []
       for fileEntry in feed:
-        if not fileEntry.get('parents'):
+        if not fileEntry.get('parents') and 'sharedWithMeTime' not in fileEntry:
           orphanDriveFiles.append(fileEntry)
       jcount = len(orphanDriveFiles)
       entityPerformActionNumItemsModifier([Ent.USER, user], jcount, Ent.DRIVE_ORPHAN_FILE_OR_FOLDER,
@@ -75091,6 +75212,7 @@ MAIN_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_CHROMEVERSIONS:	doPrintShowChromeVersions,
       Cmd.ARG_CIGROUP:		doPrintCIGroups,
       Cmd.ARG_CIGROUPMEMBERS:	doPrintCIGroupMembers,
+      Cmd.ARG_CIPOLICIES:	doPrintShowCIPolicies,
       Cmd.ARG_CLASSROOMINVITATION:	doPrintShowClassroomInvitations,
       Cmd.ARG_CONTACT:		doPrintShowDomainContacts,
       Cmd.ARG_COURSE:		doPrintCourses,
@@ -75219,6 +75341,7 @@ MAIN_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_CHROMESCHEMA:	doPrintShowChromeSchemas,
       Cmd.ARG_CHROMEVERSIONS:	doPrintShowChromeVersions,
       Cmd.ARG_CIGROUPMEMBERS:	doShowCIGroupMembers,
+      Cmd.ARG_CIPOLICIES:	doPrintShowCIPolicies,
       Cmd.ARG_CLASSROOMINVITATION:	doPrintShowClassroomInvitations,
       Cmd.ARG_CONTACT:		doPrintShowDomainContacts,
       Cmd.ARG_CROSTELEMETRY:	doInfoPrintShowCrOSTelemetry,

@@ -46,10 +46,10 @@ CLOUDIDENTITY_DEVICES = 'cloudidentitydevices'
 CLOUDIDENTITY_GROUPS = 'cloudidentitygroups'
 CLOUDIDENTITY_INBOUND_SSO = 'cloudidentityinboundsso'
 CLOUDIDENTITY_ORGUNITS = 'cloudidentityorgunits'
+CLOUDIDENTITY_POLICY = 'cloudidentitypolicy'
 CLOUDIDENTITY_ORGUNITS_BETA = 'cloudidentityorgunitsbeta'
 CLOUDIDENTITY_USERINVITATIONS = 'cloudidentityuserinvitations'
 CLOUDRESOURCEMANAGER = 'cloudresourcemanager'
-CLOUDRESOURCEMANAGER_V1 = 'cloudresourcemanager1'
 CONTACTS = 'contacts'
 CONTACTDELEGATION = 'contactdelegation'
 DATATRANSFER = 'datatransfer'
@@ -227,6 +227,7 @@ _INFO = {
   CLOUDIDENTITY_INBOUND_SSO: {'name': 'Cloud Identity Inbound SSO API', 'version': 'v1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
   CLOUDIDENTITY_ORGUNITS: {'name': 'Cloud Identity OrgUnits API', 'version': 'v1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
   CLOUDIDENTITY_ORGUNITS_BETA: {'name': 'Cloud Identity OrgUnits API', 'version': 'v1beta1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
+  CLOUDIDENTITY_POLICY: {'name': 'Cloud Identity Policy API', 'version': 'v1beta1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
   CLOUDIDENTITY_USERINVITATIONS: {'name': 'Cloud Identity User Invitations API', 'version': 'v1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
   CLOUDRESOURCEMANAGER: {'name': 'Cloud Resource Manager API v3', 'version': 'v3', 'v2discovery': True},
   CONTACTS: {'name': 'Contacts API', 'version': 'v3', 'v2discovery': False},
@@ -365,6 +366,12 @@ _CLIENT_SCOPES = [
    'api': CLOUDIDENTITY_ORGUNITS_BETA,
    'subscopes': READONLY,
    'scope': 'https://www.googleapis.com/auth/cloud-identity.orgunits'},
+  {'name': 'Cloud Identity - Policy',
+   'api': CLOUDIDENTITY_POLICY,
+   'subscopes': READONLY,
+   'roByDefault': True,
+   'scope': 'https://www.googleapis.com/auth/cloud-identity.policies'
+  },
   {'name': 'Cloud Identity User Invitations API',
    'api': CLOUDIDENTITY_USERINVITATIONS,
    'subscopes': READONLY,
@@ -485,6 +492,7 @@ _CLIENT_SCOPES = [
   {'name': 'Site Verification API',
    'api': SITEVERIFICATION,
    'subscopes': [],
+   'offByDefault': True,
    'scope': 'https://www.googleapis.com/auth/siteverification'},
   {'name': 'Sites API',
    'api': SITES,
