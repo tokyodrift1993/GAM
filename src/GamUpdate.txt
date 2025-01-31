@@ -1,3 +1,34 @@
+7.03.01
+
+Updated `gam create project` to retry the following unexpected error:
+```
+ERROR: 400 - invalidArgument - Service account gam-project-a1b2c@gam-project-a1b2c.iam.gserviceaccount.com does not exist.
+```
+
+7.03.00
+
+Updated `gam create|use project` to discontinue use of the `Identity-Aware Proxy (IAP) OAuth Admin APIs`
+that are being deprecated by Google. You will see a set of instructions detailing how to
+configure the Oauth Consent screen and create the Oauth client.
+
+Added options `copypermissionroles <DriveFileACLRoleList>` and `copypermissiontypes <DriveFileACLTypeList>`
+to `gam <UserTypeEntity> copy drivefile` that provide more control over what permissions are copied
+from the source files/folders to the destination files/folders.
+
+7.02.11
+
+Updated `gam report <ActivityApplicationName>` to display `id:<actor.profileId>` in the `emailAddress` column
+when `actor.email` is empty. This typically occurs when the actor is not in your workspace.
+
+Updated `gam <UserTypeEntity> copy drivefile` to ignore ACLs referencing deleted user/groups.
+
+7.02.10
+
+Added option `bydate` to `gam report <ActivityApplicationName> ... countsonly` that provides an additional display option.
+* `countsonly` - Display a row per user across all dates with all event counts on one row
+* `countsonly bydate` - Display a row per user per date for all dates with any events with all events counts on the row
+* `countsonly summary` - Display a row per event with counts for each event summarized across users and dates
+
 7.02.09
 
 Added option `clearresources` to `<EventUpdateAttribute>` for use in `gam <UserTypeEntity> update events`
