@@ -1362,6 +1362,7 @@ gam create project [admin <EmailAddress>] [project <ProjectID>]
          nokey]
 gam use project [<EmailAddress>] [<ProjectID>]
 gam use project [admin <EmailAddress>] [project <ProjectID>]
+        [appname <String>] [supportemail <EmailAddress>]
         [saname <ServiceAccountName>] [sadisplayname <ServiceAccountDisplayName>]
         [sadescription <ServiceAccountDescription>]
         [(algorithm KEY_ALG_RSA_1024|KEY_ALG_RSA_2048)|
@@ -2089,19 +2090,25 @@ gam move browsers ou|org|orgunit <OrgUnitPath>
         [batchsize <Integer>]
 
 gam info browser <DeviceID>
-        [basic|full|annotated] <BrowserFieldName>* [fields <BrowserFieldNameList>]
+        (basic|full|annotated | 
+         (<BrowserFieldName>* [fields <BrowserFieldNameList>]) |
+         (rawfields "<BrowserFieldNameList>"))
         [formatjson]
 gam show browsers
         ([ou|org|orgunit|browserou <OrgUnitPath>] [(query <QueryBrowser>)|(queries <QueryBrowserList>))|(select <BrowserEntity>))
         [querytime<String> <Time>]
         [orderby <BrowserOrderByFieldName> [ascending|descending]]
-        [basic|full|allfields|annotated] <BrowserFieldName>* [fields <BrowserFieldNameList>]
+        (basic|full|annotated | 
+         (<BrowserFieldName>* [fields <BrowserFieldNameList>]) |
+         (rawfields "<BrowserFieldNameList>"))
         [formatjson]
 gam print browsers [todrive <ToDriveAttribute>*]
         ([ou|org|orgunit|browserou <OrgUnitPath>] [(query <QueryBrowser>)|(queries <QueryBrowserList>))|(select <BrowserEntity>))
         [querytime<String> <Time>]
         [orderby <BrowserOrderByFieldName> [ascending|descending]]
-        [basic|full|allfields|annotated] <BrowserFieldName>* [fields <BrowserFieldNameList>]
+        (basic|full|annotated | 
+         (<BrowserFieldName>* [fields <BrowserFieldNameList>]) |
+         (rawfields "<BrowserFieldNameList>"))
         [sortheaders]
         [formatjson [quotechar <Character>]]
 
@@ -3926,8 +3933,11 @@ gam print group-members [todrive <ToDriveAttribute>*]
         updatetime
 <CIGroupFieldNameList> ::= "<CIGroupFieldName>(,<CIGroupFieldName>)*"
 
-gam create cigroup <EmailAddress> [copyfrom <GroupItem>] <GroupAttribute>*
-        [makeowner] [alias|aliases <CIGroupAliasList>] [dynamic <QueryDynamicGroup>]
+gam create cigroup <EmailAddress>
+        [copyfrom <GroupItem>] <GroupAttribute>*
+        [makeowner] [alias|aliases <CIGroupAliasList>]
+        [security|makesecuritygroup]
+        [dynamic <QueryDynamicGroup>]
 gam update cigroup <GroupEntity> [copyfrom <GroupItem>] <GroupAttribute>
         [security|makesecuritygroup|
          dynamicsecurity|makedynamicsecuritygroup|
@@ -4451,7 +4461,7 @@ gam report <ActivityApplicationName> [todrive <ToDriveAttribute>*]
         [event|events <EventNameList>] [ip <String>]
         [groupidfilter <String>]
         [maxactivities <Number>] [maxevents <Number>] [maxresults <Number>]
-        [countsonly [summary] [eventrowfilter]]
+        [countsonly [bydate|summary] [eventrowfilter]]
         (addcsvdata <FieldName> <String>)* [shownoactivities]
 
 <CustomerServiceName> ::=
@@ -4514,7 +4524,7 @@ gam report users|user [todrive <ToDriveAttribute>*]
         (country|countrycode <String>)
 
 gam create|add resoldcustomer <CustomerDomain> (customer_auth_token <String>) <ResoldCustomerAttribute>+
-gam update resoldcustomer <CustomerID> [customer_auth_token <String>] <ResoldCustomerAttribues>+
+gam update resoldcustomer <CustomerID> <ResoldCustomerAttribues>+
 gam info resoldcustomer <CustomerID> [formatjson]
 
 gam create|add resoldsubscription <CustomerID> (sku <SKUID>)
@@ -4731,41 +4741,6 @@ gam <UserTypeEntity> sendemail from <EmailAddress>
         (embedimage <FileName> <String>)*
         [newuser <EmailAddress> firstname|givenname <String> lastname|familyname <string> password <Password>]
         (<SMTPDateHeader> <Time>)* (<SMTPHeader> <String>)* (header <String> <String>)*
-
-# Sites
-
-<SiteACLRole> ::= editor|owner|reader|writer
-<SiteACLRoleList> ::= "<SiteACLRole>(,<SiteACLRole>)*"
-
-<SiteACLScope> ::=
-        <EmailAddress>|user:<EmailAddress>|group:<EmailAddress>|domain:<DomainName>|domain|default
-<SiteACLScopeList> ::= "<SiteACLScope>(,<SiteACLScope>)*"
-<SiteACLScopeEntity> ::=
-        <SiteACLScopeList> | <FileSelector> | <CSVFileSelector> | <CSVkmdSelector> | <CSVDataSelector>
-
-<SiteAttribute> ::=
-        (categories <String>)|
-        (name <String>)|
-        (sourcelink <URI>])|
-        (summary <String>)|
-        (theme <String>)
-
-gam [<UserTypeEntity>] create|add site <SiteItem> <SiteAttribute>*
-gam [<UserTypeEntity>] update sites <SiteEntity> <SiteAttribute>+
-gam [<UserTypeEntity>] info sites <SiteEntity> [withmappings] [role|roles all|<SiteACLRoleList>]
-gam [<UserTypeEntity>] show sites [domain|domains <DomainNameEntity>] [includeallsites]
-        [withmappings] [role|roles all|<SiteACLRoleList>] [startindex <Number>] [maxresults <Number>]
-gam [<UserTypeEntity>] print sites [todrive <ToDriveAttribute>*] [domain|domains <DomainNameEntity>] [includeallsites]
-        [withmappings] [role|roles all|<SiteACLRoleList>] [startindex <Number>] [maxresults <Number>] [convertcrnl] [delimiter <Character>]
-
-gam [<UserTypeEntity>] print siteactivity <SiteEntity> [todrive <ToDriveAttribute>*] [startindex <Number>] [maxresults <Number>] [updated_min <Date>] [updated_max <Date>]
-
-gam [<UserTypeEntity>] create|add siteacls <SiteEntity> <SiteACLRole> <SiteACLScopeEntity>
-gam [<UserTypeEntity>] update siteacls <SiteEntity> <SiteACLRole> <SiteACLScopeEntity>
-gam [<UserTypeEntity>] delete siteacls <SiteEntity> <SiteACLScopeEntity>
-gam [<UserTypeEntity>] info siteacls <SiteEntity> <SiteACLScopeEntity>
-gam [<UserTypeEntity>] show siteacls <SiteEntity>
-gam [<UserTypeEntity>] print siteacls <SiteEntity> [todrive <ToDriveAttribute>*]
 
 # Shared Drives - Administrator
 
@@ -5260,7 +5235,7 @@ gam print vaultcounts [todrive <ToDriveAttributes>*]
 gam print vaultcounts [todrive <ToDriveAttributes>*]
         matter <MatterItem> operation <String> [wait <Integer>]
 
-gam create vaultexport|export matter <MatterItem> [name <String>] corpus calendar|drive|mail|groups|hangouts_chat|voice
+gam create vaultexport|export matter <MatterItem> [name <String>] corpus calendar|drive|gemini|groups|hangouts_chat|mail|voice
         (accounts <EmailAddressEntity>) | (orgunit|org|ou <OrgUnitPath>) | everyone
         (shareddrives|teamdrives <SharedDriveIDList>) | (rooms <RoomList>) | (sitesurl <URLList>)
         [scope all_data|held_data|unprocessed_data]
@@ -5268,10 +5243,12 @@ gam create vaultexport|export matter <MatterItem> [name <String>] corpus calenda
         [locationquery <StringList>] [peoplequery <StringList>] [minuswords <StringList>]
         [responsestatuses <AttendeeStatus>(,<AttendeeStatus>)*] [calendarversiondate <Date>|<Time>]
         [includeshareddrives <Boolean>] [driveversiondate <Date>|<Time>] [includeaccessinfo <Boolean>]
+        [driveclientsideencryption any|encrypted|unencrypted]
         [includerooms <Boolean>]
-        [excludedrafts <Boolean>] [format mbox|pst]
+        [excludedrafts <Boolean>] [mailclientsideencryption any|encrypted|unencrypted]
         [showconfidentialmodecontent <Boolean>] [usenewexport <Boolean>] [exportlinkeddrivefiles <Boolean>]
         [covereddata calllogs|textmessages|voicemails]
+        [format ics|mbox|pst|xml]
         [region any|europe|us] [showdetails|returnidonly]
 gam delete vaultexport|export <ExportItem> matter <MatterItem>
 gam delete vaultexport|export <MatterItem> <ExportItem>
@@ -6575,6 +6552,8 @@ gam <UserTypeEntity> copy drivefile <DriveFileEntity>
         [copysubfolderpermissions [<Boolean>]]
         [copysubfolderinheritedpermissions [<Boolean>]]
         [copysubfoldernoniheritedpermissions never|always|syncallfolders|syncupdatedfolders]
+        [copypermissionroles <DriveFileACLRoleList>]
+        [copypermissiontypes <DriveFileACLTypeList>]
         [excludepermissionsfromdomains|includepermissionsfromdomains <DomainNameList>]
         (mappermissionsdomain <DomainName> <DomainName>)*
         [copysheetprotectedranges [<Boolean>]]
@@ -7592,6 +7571,7 @@ gam <UserTypeEntity> show messages|threads
         [countsonly|positivecountsonly] [useronly]
         [headers all|<SMTPHeaderList>] [dateheaderformat iso|rfc2822|<String>] [dateheaderconverttimezone [<Boolean>]]
         [showlabels] [delimiter <Character>] [showbody] [showhtml] [showdate] [showsize] [showsnippet]
+        [maxmessagesperthread <Number>]
         [[attachmentnamepattern <RegularExpression>]
             [showattachments [noshowtextplain]]
             [saveattachments [targetfolder <FilePath>] [overwrite [<Boolean>]]]
@@ -7603,6 +7583,7 @@ gam <UserTypeEntity> print messages|threads [todrive <ToDriveAttribute>*]
         [countsonly|positivecountsonly] [useronly]
         [headers all|<SMTPHeaderList>] [dateheaderformat iso|rfc2822|<String> [dateheaderconverttimezone [<Boolean>]]]
         [showlabels] [delimiter <Character>] [showbody] [showhtml] [showdate] [showsize] [showsnippet]
+        [maxmessagesperthread <Number>]
         [convertcrnl] [delimiter <Character>]
         [[attachmentnamepattern <RegularExpression>]
             [showattachments [noshowtextplain]]]

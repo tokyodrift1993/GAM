@@ -924,6 +924,7 @@ class GamCLArgs():
   OB_EXPORT_ITEM = 'ExportItem'
   OB_FIELD_NAME = 'FieldName'
   OB_FIELD_NAME_LIST = "FieldNameList"
+  OB_FIELDS = 'Fields'
   OB_FILE_NAME = 'FileName'
   OB_FILE_NAME_FIELD_NAME = OB_FILE_NAME+'(:'+OB_FIELD_NAME+')+'
   OB_FILE_NAME_OR_URL = 'FileName|URL'
@@ -1148,6 +1149,10 @@ class GamCLArgs():
     if self.ArgumentsRemaining():
       return f'Command: {self.QuotedArgumentList(self.argv[:self.argvI])} >>>{self.QuotedArgumentList([self.argv[self.argvI]])}<<< {self.QuotedArgumentList(self.argv[self.argvI+1:])}\n'
     return f'Command: {self.QuotedArgumentList(self.argv)} >>><<<\n'
+
+# Deprecated command
+  def CommandDeprecated(self):
+    return f'{self.QuotedArgumentList(self.argv)}\n'
 
 # Peek to see if next argument is in choices
   def PeekArgumentPresent(self, choices):

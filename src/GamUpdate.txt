@@ -1,3 +1,139 @@
+7.04.02
+
+Improved output formatting for the following commands:
+```
+gam info peoplecontact
+gam show peoplecontacts
+gam info peopleprofile
+gam show peopleprofile
+gam <UserTypeEntity> info contacts
+gam <UserTypeEntity> show contacts
+gam <UserTypeEntity> show peopleprofile
+```
+
+7.04.01
+
+Fixed bug where multiple `querytime<String>` values in a query were not properly processed;
+only the last `querytime<String>` was processed.
+```
+Command line: query "sync:#querytime1#..#querytime2# status:provisioned" querytime1 -2y querytime2 -40w
+Query: (sync:#querytime1#..2024-05-09T00:00:00 status:provisioned) Invalid
+```
+
+7.04.00
+
+The Classic Sites API no longer functions, the following commands are deprecated:
+```
+gam [<UserTypeEntity>] create site
+gam [<UserTypeEntity>] update site
+gam [<UserTypeEntity>] info site
+gam [<UserTypeEntity>] print sites
+gam [<UserTypeEntity>] show sites
+gam [<UserTypeEntity>] create siteacls
+gam [<UserTypeEntity>] update siteacls
+gam [<UserTypeEntity>] delete siteacls
+gam [<UserTypeEntity>] info siteacls
+gam [<UserTypeEntity>] show siteacls
+gam [<UserTypeEntity>] print siteacls
+gam [<UserTypeEntity>] print siteactivity
+```
+
+7.03.09
+
+Added option `maxmessagesperthread <Number>` to `gam <UserTypeEntity> print|show threads`
+that limits the number of messages displayed per thread. The default is 0, there is no limit.
+For example, this can be used if you only want to see the first message of each thread.
+```
+gam user user@domain.com print|show threads maxmessagesperthread 1
+```
+
+Fixed bug in `gam <UserTypeEntity> print filelist countsonly` where extraneous columns
+were displayed.
+
+Fixed bug in `gam <UserTypeEntity> print filelist countsonly showsize` where sizes were
+all shown as 0 unless`sizefield size` was specified.
+
+7.03.08
+
+Improved pip install.
+
+Yubikey as optional should now be working also. So:
+
+pip install --upgrade gam7
+
+skips Yubikey.
+
+To install with yubikey support (assuming you have installed the necessary swig and libpcsclite-dev packages already) run:
+
+pip install --upgrade gam7[yubikey]
+
+7.03.07
+
+Updated `gam create vaultexport` to include `corpus gemini`.
+
+* See: https://workspaceupdates.googleblog.com/2025/02/google-vault-now-supports-gemini.html
+
+7.03.06
+
+Added option `rawfields "<BrowserFieldNameList>"` to `gam info|print|show browsers` that allows
+specification of complex field lists with selected subfields.
+
+* See: https://github.com/GAM-team/GAM/wiki/Chrome-Browser-Cloud-Management#raw-fields
+
+7.03.05
+
+Make GAM pip-installable: "pip install gam7"
+
+7.03.04
+
+Added option `security` to `gam create cigroup` that allows creation of a security group
+in a single command.
+
+Updated to Python 3.13.2.
+
+7.03.03
+
+Fixed bug in `gam update resoldcustomer` that caused the following error:
+```
+ERROR: Got an unexpected keyword argument customerAuthToken
+```
+
+7.03.02
+
+Updated `gam <UserTypeEntity> show labels nested` to properly display label nesting
+when labels have embedded `/` characters in their names.
+
+7.03.01
+
+Updated `gam create project` to retry the following unexpected error:
+```
+ERROR: 400 - invalidArgument - Service account gam-project-a1b2c@gam-project-a1b2c.iam.gserviceaccount.com does not exist.
+```
+
+7.03.00
+
+Updated `gam create|use project` to discontinue use of the `Identity-Aware Proxy (IAP) OAuth Admin APIs`
+that are being deprecated by Google. You will see a set of instructions detailing how to
+configure the Oauth Consent screen and create the Oauth client.
+
+Added options `copypermissionroles <DriveFileACLRoleList>` and `copypermissiontypes <DriveFileACLTypeList>`
+to `gam <UserTypeEntity> copy drivefile` that provide more control over what permissions are copied
+from the source files/folders to the destination files/folders.
+
+7.02.11
+
+Updated `gam report <ActivityApplicationName>` to display `id:<actor.profileId>` in the `emailAddress` column
+when `actor.email` is empty. This typically occurs when the actor is not in your workspace.
+
+Updated `gam <UserTypeEntity> copy drivefile` to ignore ACLs referencing deleted user/groups.
+
+7.02.10
+
+Added option `bydate` to `gam report <ActivityApplicationName> ... countsonly` that provides an additional display option.
+* `countsonly` - Display a row per user across all dates with all event counts on one row
+* `countsonly bydate` - Display a row per user per date for all dates with any events with all events counts on the row
+* `countsonly summary` - Display a row per event with counts for each event summarized across users and dates
+
 7.02.09
 
 Added option `clearresources` to `<EventUpdateAttribute>` for use in `gam <UserTypeEntity> update events`
