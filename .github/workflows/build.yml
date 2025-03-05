@@ -5,6 +5,7 @@ on:
   pull_request:
   schedule:
     - cron: '37 22 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,7 +18,7 @@ defaults:
     working-directory: src
 
 env:
-  SCRATCH_COUNTER: 6
+  SCRATCH_COUNTER: 11
   OPENSSL_CONFIG_OPTS: no-fips --api=3.0.0
   OPENSSL_INSTALL_PATH: ${{ github.workspace }}/bin/ssl
   OPENSSL_SOURCE_PATH: ${{ github.workspace }}/src/openssl
@@ -129,7 +130,7 @@ jobs:
         with:
           path: |
             cache.tar.xz
-          key: gam-${{ matrix.jid }}-20250116
+          key: gam-${{ matrix.jid }}-20250204
 
       - name: Untar Cache archive
         if: matrix.goal == 'build' && steps.cache-python-ssl.outputs.cache-hit == 'true'
@@ -756,7 +757,7 @@ jobs:
 
       - name: Attest that gam package files were generated from this Action
         uses: actions/attest-build-provenance@v1
-        if: (github.event_name == 'push' || github.event_name == 'schedule') && matrix.goal == 'build'
+        if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && matrix.goal == 'build'
         with:
           subject-path: |
             gam*.tar.xz
@@ -765,7 +766,7 @@ jobs:
 
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
-        if: (github.event_name == 'push' || github.event_name == 'schedule') && matrix.goal != 'test'
+        if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && matrix.goal != 'test'
         with:
           name: gam-binaries-${{ env.GAMOS }}-${{ env.arch }}-${{ matrix.jid }}
           path: |
@@ -793,8 +794,8 @@ jobs:
           fi
           echo "We successfully compiled Python ${this_python} and OpenSSL ${this_openssl}"
 
-      - name: Live API tests push only
-        if: (github.event_name == 'push' || github.event_name == 'schedule')
+      - name: Live API tests
+        if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         run: |
           export gam_user="gam-gha-${JID}@pdl.jaylee.us"
           echo "gam_user=${gam_user}" >> $GITHUB_ENV
@@ -823,6 +824,7 @@ jobs:
           $gam config csv_output_row_filter "name:regex:gha_test_${JID}_" print vaultholds || if [ $? != 55 ]; then exit $?; fi | $gam csv - gam delete vaulthold "id:~~holdId~~" matter "id:~~matterId~~"
           $gam config csv_output_row_filter "name:regex:gha_test_${HID}_" print vaultmatters matterstate OPEN | $gam csv - gam update vaultmatter "id:~~matterId~~" action close
           $gam config csv_output_row_filter "name:regex:gha_test_${HID}_" print vaultmatters matterstate CLOSED | $gam csv - gam update vaultmatter "id:~~matterId~~" action delete
+          $gam config csv_output_row_filter "Emails.1.address:regex:^gha_test-${JID}_" print contacts | $gam csv - gam delete contact ~ContactID
           $gam config enable_dasa true save
           $gam config csv_output_row_filter "name:regex:gha_test_${JID}_" print features | $gam csv - gam delete feature ~name
           $gam config csv_output_row_filter "name:regex:^gha_test_${JID}_" user $gam_user print shareddrives asadmin | $gam csv - gam user $gam_user delete shareddrive ~id nukefromorbit
@@ -831,7 +833,6 @@ jobs:
           $gam config csv_output_row_filter "email:regex:^gha_test_${JID}_" print cigroups | $gam csv - gam delete cigroup ~email
           $gam config csv_output_row_filter "resourceId:regex:^gha_test_${JID}_" print resources | $gam csv - gam delete resource ~resourceId
           $gam config csv_output_row_filter "buildingId:regex:^gha_test_${JID}_" print buildings | $gam csv - gam delete building ~buildingId
-          $gam config csv_output_row_filter "Emails.1.address:regex:^gha_test-${JID}_" print contacts | $gam csv - gam delete contact ~ContactID
 
           echo "Creating OrgUnit ${newou}"
           $gam create ou "${newou}"
@@ -873,6 +874,8 @@ jobs:
           $gam csv sample.csv gam update user ~~email~~ recoveryphone "" recoveryemail ""
           $gam config enable_dasa false save
           $gam csv sample.csv gam user ~email add license workspaceenterpriseplus
+          #$gam user $newuser add contactdelegate "${newbase}-bulkuser-1"
+          #$gam user $newuser print contactdelegates
           $gam config enable_dasa true save
           $gam csv sample.csv gam user $gam_user sendemail recipient ~~email~~@pdl.jaylee.us subject "test message $newbase" message "GHA test message"
           $gam csv sample.csv gam update group $newgroup add member ~email
@@ -883,8 +886,6 @@ jobs:
           $gam user $newuser imap on
           $gam user $newuser show imap
           $gam user $newuser show delegates
-          #$gam user $newuser add contactdelegate "${newbase}-bulkuser-1"
-          #$gam user $newuser print contactdelegates
           export biohazard=$(echo -e '\xe2\x98\xa3')
           $gam user $newuser label "$biohazard unicode biohazard $biohazard"
           $gam user $newuser show labels
@@ -916,7 +917,7 @@ jobs:
           $gam calendar $gam_user addevent summary "GHA test event" start +1h end +2h attendee $newgroup hangoutsmeet guestscanmodify true sendupdates all
           $gam calendar $gam_user printevents after -0d
           $gam config enable_dasa false save
-          matterid=uid:$($gam create vaultmatter name "GHA matter $newbase" description "test matter" collaborators $newuser returnidonly)
+          matterid=uid:$($gam create vaultmatter name "GHA matter $newbase" description "test matter" returnidonly)
           $gam create vaulthold matter $matterid name "GHA hold $newbase" corpus mail accounts $newuser
           $gam print vaultmatters matterstate open
           $gam print vaultholds matter $matterid
@@ -950,9 +951,9 @@ jobs:
           $gam user $newuser show holds || if [ $? != 55 ]; then exit $?; fi # expect a 55 return code
           export sn="$JID$JID$JID$JID-$(openssl rand -base64 32 | sed 's/[^a-zA-Z0-9]//g')"
           $gam create device serialnumber $sn devicetype android
+          $gam delete contacts emailmatchpattern "^${newbase}@example.com$"
           $gam config enable_dasa true save
           $gam print users query "gha.jid=$JID" | $gam csv - gam delete user ~primaryEmail  || if [ $? != 50 ]; then exit $?; fi # expect a 50 return code (vault hold on user)
-          $gam delete contacts emailmatchpattern "^${newbase}@example.com$"
           $gam print mobile
           $gam print devices
           $gam print browsers
@@ -1004,7 +1005,7 @@ jobs:
           tar cJvvf cache.tar.xz $tar_folders
 
   merge:
-    if: (github.event_name == 'push' || github.event_name == 'schedule')
+    if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     needs: build
     permissions:
@@ -1018,7 +1019,7 @@ jobs:
           pattern: gam-binaries-*
 
   publish:
-    if: github.event_name == 'push'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     needs: merge
     permissions:

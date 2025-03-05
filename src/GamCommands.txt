@@ -1362,6 +1362,7 @@ gam create project [admin <EmailAddress>] [project <ProjectID>]
          nokey]
 gam use project [<EmailAddress>] [<ProjectID>]
 gam use project [admin <EmailAddress>] [project <ProjectID>]
+        [appname <String>] [supportemail <EmailAddress>]
         [saname <ServiceAccountName>] [sadisplayname <ServiceAccountDisplayName>]
         [sadescription <ServiceAccountDescription>]
         [(algorithm KEY_ALG_RSA_1024|KEY_ALG_RSA_2048)|
@@ -2089,19 +2090,25 @@ gam move browsers ou|org|orgunit <OrgUnitPath>
         [batchsize <Integer>]
 
 gam info browser <DeviceID>
-        [basic|full|annotated] <BrowserFieldName>* [fields <BrowserFieldNameList>]
+        (basic|full|annotated | 
+         (<BrowserFieldName>* [fields <BrowserFieldNameList>]) |
+         (rawfields "<BrowserFieldNameList>"))
         [formatjson]
 gam show browsers
         ([ou|org|orgunit|browserou <OrgUnitPath>] [(query <QueryBrowser>)|(queries <QueryBrowserList>))|(select <BrowserEntity>))
         [querytime<String> <Time>]
         [orderby <BrowserOrderByFieldName> [ascending|descending]]
-        [basic|full|allfields|annotated] <BrowserFieldName>* [fields <BrowserFieldNameList>]
+        (basic|full|annotated | 
+         (<BrowserFieldName>* [fields <BrowserFieldNameList>]) |
+         (rawfields "<BrowserFieldNameList>"))
         [formatjson]
 gam print browsers [todrive <ToDriveAttribute>*]
         ([ou|org|orgunit|browserou <OrgUnitPath>] [(query <QueryBrowser>)|(queries <QueryBrowserList>))|(select <BrowserEntity>))
         [querytime<String> <Time>]
         [orderby <BrowserOrderByFieldName> [ascending|descending]]
-        [basic|full|allfields|annotated] <BrowserFieldName>* [fields <BrowserFieldNameList>]
+        (basic|full|annotated | 
+         (<BrowserFieldName>* [fields <BrowserFieldNameList>]) |
+         (rawfields "<BrowserFieldNameList>"))
         [sortheaders]
         [formatjson [quotechar <Character>]]
 
@@ -3839,6 +3846,7 @@ gam info group|groups <GroupEntity>
         [formatjson]
 gam print groups [todrive <ToDriveAttribute>*]
         [([domain|domains <DomainNameEntity>] ([member|showownedby <EmailItem>]|[(query <QueryGroup>)|(queries <QueryGroupList>)]))|
+         (group|group_ns|group_susp <GroupItem>)|
          (select <GroupEntity>)]
         [emailmatchpattern [not] <RegularExpression>] [namematchpattern [not] <RegularExpression>]
         [descriptionmatchpattern [not] <RegularExpression>] (matchsetting [not] <GroupAttribute>)*
@@ -3926,8 +3934,11 @@ gam print group-members [todrive <ToDriveAttribute>*]
         updatetime
 <CIGroupFieldNameList> ::= "<CIGroupFieldName>(,<CIGroupFieldName>)*"
 
-gam create cigroup <EmailAddress> [copyfrom <GroupItem>] <GroupAttribute>*
-        [makeowner] [alias|aliases <CIGroupAliasList>] [dynamic <QueryDynamicGroup>]
+gam create cigroup <EmailAddress>
+        [copyfrom <GroupItem>] <GroupAttribute>*
+        [makeowner] [alias|aliases <CIGroupAliasList>]
+        [security|makesecuritygroup]
+        [dynamic <QueryDynamicGroup>]
 gam update cigroup <GroupEntity> [copyfrom <GroupItem>] <GroupAttribute>
         [security|makesecuritygroup|
          dynamicsecurity|makedynamicsecuritygroup|
@@ -3987,13 +3998,14 @@ gam print cigroups [todrive <ToDriveAttribute>*]
 
 <CIGroupMembersFieldName> ::=
         createtime
+        email|useremail|
         expiretime|
         memberkey|
         name|
         role|
         type|
-        updatetime|
-        useremail
+        updatetime
+
 <CIGroupMembersFieldNameList> ::= "<CIGroupMembersFieldName>(,<CIGroupMembersFieldName>)*"
 
 gam <UserTypeEntity> info cimember <GroupEntity>
@@ -4007,16 +4019,19 @@ gam print cigroup-members [todrive <ToDriveAttribute>*]
         [types <CIGroupMemberTypeList>]
         [memberemaildisplaypattern|memberemailskippattern <RegularExpression>]
         <CIGroupMembersFieldName>* [fields <CIGroupMembersFieldNameList>]
-        [(recursive [noduplicates])includederivedmembership] [nogroupeemail]
+        [minimal|basic|full]
+        [(recursive [noduplicates]) | includederivedmembership] [nogroupemail]
         [formatjson [quotechar <Character>]]
 gam show cigroup-members
         [(cimember|ciowner <UserItem>)|(cigroup <GroupItem>)|(select <GroupEntity>)]
         [showownedby <UserItem>]
         [emailmatchpattern [not] <RegularExpression>] [namematchpattern [not] <RegularExpression>]
         [descriptionmatchpattern [not] <RegularExpression>]
-        [roles <GroupRoleList>] [members] [managers] [owners] [depth <Number>]
+        [roles <GroupRoleList>] [members] [managers] [owners]
         [types <CIGroupMemberTypeList>]
         [memberemaildisplaypattern|memberemailskippattern <RegularExpression>]
+        [minimal|basic|full]
+        [(depth <Number>) | includederivedmembership]
 
 # Cloud Identity Devices
 
@@ -4058,6 +4073,7 @@ gam show cigroup-members
         releaseversion|
         securitypatchtime|
         serialnumber|
+        unifieddeviceid|
         wifimacaddresses
 <DeviceFieldNameList> ::= "<DeviceFieldName>(,<DeviceFieldName>)*"
 
@@ -4451,7 +4467,7 @@ gam report <ActivityApplicationName> [todrive <ToDriveAttribute>*]
         [event|events <EventNameList>] [ip <String>]
         [groupidfilter <String>]
         [maxactivities <Number>] [maxevents <Number>] [maxresults <Number>]
-        [countsonly [summary] [eventrowfilter]]
+        [countsonly [bydate|summary] [eventrowfilter]]
         (addcsvdata <FieldName> <String>)* [shownoactivities]
 
 <CustomerServiceName> ::=
@@ -4459,6 +4475,7 @@ gam report <ActivityApplicationName> [todrive <ToDriveAttribute>*]
         app_maker|
         apps_scripts|
         calendar|
+        chat|
         classroom|
         cros|
         device_management|
@@ -4479,6 +4496,7 @@ gam report customers|customer|domain [todrive <ToDriveAttribute>*]
 
 <UserServiceName> ::=
         accounts|
+        chat|
         classroom|
         docs|
         drive|
@@ -4514,7 +4532,7 @@ gam report users|user [todrive <ToDriveAttribute>*]
         (country|countrycode <String>)
 
 gam create|add resoldcustomer <CustomerDomain> (customer_auth_token <String>) <ResoldCustomerAttribute>+
-gam update resoldcustomer <CustomerID> [customer_auth_token <String>] <ResoldCustomerAttribues>+
+gam update resoldcustomer <CustomerID> <ResoldCustomerAttribues>+
 gam info resoldcustomer <CustomerID> [formatjson]
 
 gam create|add resoldsubscription <CustomerID> (sku <SKUID>)
@@ -4731,41 +4749,6 @@ gam <UserTypeEntity> sendemail from <EmailAddress>
         (embedimage <FileName> <String>)*
         [newuser <EmailAddress> firstname|givenname <String> lastname|familyname <string> password <Password>]
         (<SMTPDateHeader> <Time>)* (<SMTPHeader> <String>)* (header <String> <String>)*
-
-# Sites
-
-<SiteACLRole> ::= editor|owner|reader|writer
-<SiteACLRoleList> ::= "<SiteACLRole>(,<SiteACLRole>)*"
-
-<SiteACLScope> ::=
-        <EmailAddress>|user:<EmailAddress>|group:<EmailAddress>|domain:<DomainName>|domain|default
-<SiteACLScopeList> ::= "<SiteACLScope>(,<SiteACLScope>)*"
-<SiteACLScopeEntity> ::=
-        <SiteACLScopeList> | <FileSelector> | <CSVFileSelector> | <CSVkmdSelector> | <CSVDataSelector>
-
-<SiteAttribute> ::=
-        (categories <String>)|
-        (name <String>)|
-        (sourcelink <URI>])|
-        (summary <String>)|
-        (theme <String>)
-
-gam [<UserTypeEntity>] create|add site <SiteItem> <SiteAttribute>*
-gam [<UserTypeEntity>] update sites <SiteEntity> <SiteAttribute>+
-gam [<UserTypeEntity>] info sites <SiteEntity> [withmappings] [role|roles all|<SiteACLRoleList>]
-gam [<UserTypeEntity>] show sites [domain|domains <DomainNameEntity>] [includeallsites]
-        [withmappings] [role|roles all|<SiteACLRoleList>] [startindex <Number>] [maxresults <Number>]
-gam [<UserTypeEntity>] print sites [todrive <ToDriveAttribute>*] [domain|domains <DomainNameEntity>] [includeallsites]
-        [withmappings] [role|roles all|<SiteACLRoleList>] [startindex <Number>] [maxresults <Number>] [convertcrnl] [delimiter <Character>]
-
-gam [<UserTypeEntity>] print siteactivity <SiteEntity> [todrive <ToDriveAttribute>*] [startindex <Number>] [maxresults <Number>] [updated_min <Date>] [updated_max <Date>]
-
-gam [<UserTypeEntity>] create|add siteacls <SiteEntity> <SiteACLRole> <SiteACLScopeEntity>
-gam [<UserTypeEntity>] update siteacls <SiteEntity> <SiteACLRole> <SiteACLScopeEntity>
-gam [<UserTypeEntity>] delete siteacls <SiteEntity> <SiteACLScopeEntity>
-gam [<UserTypeEntity>] info siteacls <SiteEntity> <SiteACLScopeEntity>
-gam [<UserTypeEntity>] show siteacls <SiteEntity>
-gam [<UserTypeEntity>] print siteacls <SiteEntity> [todrive <ToDriveAttribute>*]
 
 # Shared Drives - Administrator
 
@@ -4984,6 +4967,7 @@ gam create|add permissions <SharedDriveEntityAdmin> <DriveFilePermissionEntity>
         <PermissionMatch>* [<PermissionMatchAction>]
 gam delete permissions <SharedDriveEntityAdmin> <DriveFilePermissionIDEntity>
         <PermissionMatch>* [<PermissionMatchAction>]
+        [enforceexpansiveaccess [<Boolean>]]
 
 In these commands, you specify an administrator and then indicate that you want domain administrator access with the adminaccess option.
 
@@ -4997,9 +4981,11 @@ gam <UserTypeEntity> create|add drivefileacl <SharedDriveEntityAdmin>
         adminaccess
 gam <UserTypeEntity> update drivefileacl <SharedDriveEntityAdmin> <DriveFilePermissionIDorEmail>
         (role <DriveFileACLRole>) [expires|expiration <Time>] [removeexpiration [<Boolean>]]
+        [enforceexpansiveaccess [<Boolean>]]
         [showtitles] [nodetails|(csv [todrive <ToDriveAttribute>*] [formatjson [quotechar <Character>]])]
         adminaccess
 gam <UserTypeEntity> delete drivefileacl <SharedDriveEntityAdmin> <DriveFilePermissionIDorEmail>
+        [enforceexpansiveaccess [<Boolean>]]
         [showtitles] adminaccess
 gam <UserTypeEntity> info drivefileacl <SharedDriveEntityAdmin> <DriveFilePermissionIDorEmail> adminaccess
         [showtitles]
@@ -5025,6 +5011,7 @@ gam <UserTypeEntity> create|add permissions <SharedDriveEntityAdmin> <DriveFileP
         <PermissionMatch>* [<PermissionMatchAction>]
 gam <UserTypeEntity> delete permissions <SharedDriveEntityAdmin> <DriveFilePermissionIDEntity> adminaccess
         <PermissionMatch>* [<PermissionMatchAction>]
+        [enforceexpansiveaccess [<Boolean>]]
 
 In these commands, the Google administrator named in oauth2.txt is used.
 
@@ -5260,7 +5247,7 @@ gam print vaultcounts [todrive <ToDriveAttributes>*]
 gam print vaultcounts [todrive <ToDriveAttributes>*]
         matter <MatterItem> operation <String> [wait <Integer>]
 
-gam create vaultexport|export matter <MatterItem> [name <String>] corpus calendar|drive|mail|groups|hangouts_chat|voice
+gam create vaultexport|export matter <MatterItem> [name <String>] corpus calendar|drive|gemini|groups|hangouts_chat|mail|voice
         (accounts <EmailAddressEntity>) | (orgunit|org|ou <OrgUnitPath>) | everyone
         (shareddrives|teamdrives <SharedDriveIDList>) | (rooms <RoomList>) | (sitesurl <URLList>)
         [scope all_data|held_data|unprocessed_data]
@@ -5268,10 +5255,12 @@ gam create vaultexport|export matter <MatterItem> [name <String>] corpus calenda
         [locationquery <StringList>] [peoplequery <StringList>] [minuswords <StringList>]
         [responsestatuses <AttendeeStatus>(,<AttendeeStatus>)*] [calendarversiondate <Date>|<Time>]
         [includeshareddrives <Boolean>] [driveversiondate <Date>|<Time>] [includeaccessinfo <Boolean>]
+        [driveclientsideencryption any|encrypted|unencrypted]
         [includerooms <Boolean>]
-        [excludedrafts <Boolean>] [format mbox|pst]
+        [excludedrafts <Boolean>] [mailclientsideencryption any|encrypted|unencrypted]
         [showconfidentialmodecontent <Boolean>] [usenewexport <Boolean>] [exportlinkeddrivefiles <Boolean>]
         [covereddata calllogs|textmessages|voicemails]
+        [format ics|mbox|pst|xml]
         [region any|europe|us] [showdetails|returnidonly]
 gam delete vaultexport|export <ExportItem> matter <MatterItem>
 gam delete vaultexport|export <MatterItem> <ExportItem>
@@ -5477,7 +5466,10 @@ gam download storagefile <StorageBucketObjectName>
                                             (file|htmlfile <FileName> [charset <Charset>])|
                                             (gdoc|ghtml <UserGoogleDoc>)))|
         (ou|org|orgunitpath <OrgUnitPath>|<OrgUnitID>)
-        (password (random [<Integer>])|(uniquerandom [<Integer>])|blocklogin|<Password>)|
+        (password (random [<Integer>])|(uniquerandom [<Integer>])|
+                   blocklogin|
+                   prompt|uniqueprompt|
+                   <Password>)|
         (recoveryemail <EmailAddress>)|
         (recoveryphone <string>)|
         (suspend|suspended <Boolean>)|
@@ -5560,7 +5552,7 @@ gam create|add user <EmailAddress> [ignorenullpassword] <UserAttribute>*
             [replyto <EmailAaddress>]
             [<NotifyMessageContent>]
             (replace <Tag> <UserReplacement>)*]
-        [lograndompassword <FileName>]
+        [logpassword <FileName>]
         [addnumericsuffixonduplicate <Number>]
 
 gam <UserTypeEntity> waitformailbox [retries <Number>]
@@ -5585,7 +5577,7 @@ gam update user <UserItem> [ignorenullpassword] <UserAttribute>*
             [<NotifyMessageContent>]
             (replace <Tag> <UserReplacement>)*]
         [notifyonupdate [<Boolean>]] [setchangepasswordoncreate [<Boolean>]]
-        [lograndompassword <FileName>]
+        [logpassword <FileName>]
 gam delete user <UserItem> [noactionifalias]
 gam undelete user <UserItem> [ou|org|orgunit <OrgUnitPath>]
 gam suspend user <UserItem> [noactionifalias]
@@ -5619,7 +5611,7 @@ gam update users <UserTypeEntity> [ignorenullpassword] <UserAttribute>*
             [<NotifyMessageContent>]
             (replace <Tag> <UserReplacement>)*]
         [notifyonupdate [<Boolean>]] [setchangepasswordoncreate [<Boolean>]]
-        [lograndompassword <FileName>]
+        [logpassword <FileName>]
         [verifynotinvitable]
 gam delete users <UserTypeEntity> [noactionifalias]
 gam undelete users <UserEntity> [ou|org|orgunit <OrgUnitPath>]
@@ -5652,7 +5644,7 @@ gam <UserTypeEntity> update users [ignorenullpassword] <UserAttribute>*
             [<NotifyMessageContent>]
             (replace <Tag> <UserReplacement>)*]
         [notifyonupdate [<Boolean>]] [setchangepasswordoncreate [<Boolean>]]
-        [lograndompassword <FileName>]
+        [logpassword <FileName>]
         [verifynotinvitable]
 gam <UserTypeEntity> delete users [noactionifalias]
 gam <UserEntity> undelete users [ou|org|orgunit <OrgUnitPath>]
@@ -6575,6 +6567,8 @@ gam <UserTypeEntity> copy drivefile <DriveFileEntity>
         [copysubfolderpermissions [<Boolean>]]
         [copysubfolderinheritedpermissions [<Boolean>]]
         [copysubfoldernoniheritedpermissions never|always|syncallfolders|syncupdatedfolders]
+        [copypermissionroles <DriveFileACLRoleList>]
+        [copypermissiontypes <DriveFileACLTypeList>]
         [excludepermissionsfromdomains|includepermissionsfromdomains <DomainNameList>]
         (mappermissionsdomain <DomainName> <DomainName>)*
         [copysheetprotectedranges [<Boolean>]]
@@ -6583,6 +6577,7 @@ gam <UserTypeEntity> copy drivefile <DriveFileEntity>
         [sendemailifrequired [<Boolean>]]
         [suppressnotselectedmessages [<Boolean>]]
         [verifyorganizer [<Boolean>]]
+        [enforceexpansiveaccess [<Boolean>]]
 
 gam <UserTypeEntity> move drivefile <DriveFileEntity> [newfilename <DriveFileName>]
         [summary [<Boolean>]] [showpermissionmessages [<Boolean>]]
@@ -6606,6 +6601,7 @@ gam <UserTypeEntity> move drivefile <DriveFileEntity> [newfilename <DriveFileNam
         [retainsourcefolders [<Boolean>]]
         [sendemailifrequired [<Boolean>]]
         [verifyorganizer [<Boolean>]]
+        [enforceexpansiveaccess [<Boolean>]]
 
 gam <UserTypeEntity> get document <DriveFileEntity>
         [viewmode default|suggestions_inline|preview_suggestions_accepted|preview_without_suggestions]
@@ -6711,10 +6707,10 @@ gam <UserTypeEntity> create|add drivefileacl <DriveFileEntity> [adminaccess|asad
         [showtitles] [nodetails|(csv [todrive <ToDriveAttribute>*] [formatjson [quotechar <Character>]])]
 gam <UserTypeEntity> update drivefileacl <DriveFileEntity> <DriveFilePermissionIDorEmail>
         (role <DriveFileACLRole>) [expires|expiration <Time>] [removeexpiration [<Boolean>]]
-        [updatesheetprotectedranges [<Boolean>]]
+        [updatesheetprotectedranges [<Boolean>]] [enforceexpansiveaccess [<Boolean>]]
         [showtitles] [nodetails|(csv [todrive <ToDriveAttribute>*] [formatjson [quotechar <Character>]])]
 gam <UserTypeEntity> delete drivefileacl <DriveFileEntity> <DriveFilePermissionIDorEmail>
-        [updatesheetprotectedranges [<Boolean>]]
+        [updatesheetprotectedranges [<Boolean>]] [enforceexpansiveaccess [<Boolean>]]
         [showtitles]
 gam <UserTypeEntity> info drivefileacl <DriveFileEntity> <DriveFilePermissionIDorEmail>
         [showtitles]
@@ -6838,6 +6834,7 @@ gam <UserTypeEntity> print filerevisions <DriveFileEntity> [todrive <ToDriveAttr
 
 gam <UserTypeEntity> transfer ownership <DriveFileEntity> <UserItem>
         [<DriveFileParentAttribute>] [includetrashed] [norecursion [<Boolean>]]
+        [enforceexpansiveaccess [<Boolean>]]
         (orderby <DriveFileOrderByFieldName> [ascending|descending])*
         [preview] [filepath] [pathdelimiter <Character>] [buildtree]
         [todrive <ToDriveAttribute>*]
@@ -6846,6 +6843,7 @@ gam <UserTypeEntity> claim ownership <DriveFileEntity>
         [skipids <DriveFileEntity>] [onlyusers|skipusers <UserTypeEntity>] [subdomains <DomainNameEntity>]
         [restricted [<Boolean>]] [writerscanshare|writerscantshare [<Boolean>]]
         [keepuser | (retainrole commenter|reader|writer|editor|fileorganizer|none)] [noretentionmessages]
+        [enforceexpansiveaccess [<Boolean>]]
         (orderby <DriveFileOrderByFieldName> [ascending|descending])*
         [preview] [filepath] [pathdelimiter <Character>] [buildtree]
         [todrive <ToDriveAttribute>*]
@@ -6853,6 +6851,7 @@ gam <UserTypeEntity> claim ownership <DriveFileEntity>
 gam <UserTypeEntity> transfer drive <UserItem> [select <DriveFileEntity>]
         [(targetfolderid <DriveFolderID>)|(targetfoldername <DriveFolderName>)]
         [targetuserfoldername <DriveFolderName>] [targetuserorphansfoldername <DriveFolderName>]
+        [enforceexpansiveaccess [<Boolean>]]
         [mergewithtarget [<Boolean>]]
         [skipids <DriveFileEntity>]
         [keepuser | (retainrole reader|commenter|writer|editor|fileorganizer|none)] [noretentionmessages]
@@ -7592,6 +7591,7 @@ gam <UserTypeEntity> show messages|threads
         [countsonly|positivecountsonly] [useronly]
         [headers all|<SMTPHeaderList>] [dateheaderformat iso|rfc2822|<String>] [dateheaderconverttimezone [<Boolean>]]
         [showlabels] [delimiter <Character>] [showbody] [showhtml] [showdate] [showsize] [showsnippet]
+        [maxmessagesperthread <Number>]
         [[attachmentnamepattern <RegularExpression>]
             [showattachments [noshowtextplain]]
             [saveattachments [targetfolder <FilePath>] [overwrite [<Boolean>]]]
@@ -7603,6 +7603,7 @@ gam <UserTypeEntity> print messages|threads [todrive <ToDriveAttribute>*]
         [countsonly|positivecountsonly] [useronly]
         [headers all|<SMTPHeaderList>] [dateheaderformat iso|rfc2822|<String> [dateheaderconverttimezone [<Boolean>]]]
         [showlabels] [delimiter <Character>] [showbody] [showhtml] [showdate] [showsize] [showsnippet]
+        [maxmessagesperthread <Number>]
         [convertcrnl] [delimiter <Character>]
         [[attachmentnamepattern <RegularExpression>]
             [showattachments [noshowtextplain]]]
@@ -7897,7 +7898,15 @@ gam <UserTypeEntity> show lookerstudiopermissions
 <MeetSpaceName> ::= spaces/<String> | <String>
 <MeetSpaceOptions> ::=
         accesstype open|trusted|restricted |
-        entrypointaccess all|creatorapponly
+        entrypointaccess all|creatorapponly |
+        moderation <Boolean> |
+        chatrestriction hostsonly|norestriction |
+        reactionrestriction hostsonly|norestriction |
+        presentrestriction hostsonly|norestriction |
+        defaultjoinasviewer <Boolean> |
+        recording <Boolean> |
+        transcription <Boolean> |
+        smartnotes <Boolean>
 
 gam <UserTypeEntity> create meetspace
         <MeetSpaceOptions>*

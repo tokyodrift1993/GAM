@@ -25,7 +25,7 @@ https://github.com/GAM-team/GAM/wiki
 """
 
 __author__ = 'GAM Team <google-apps-manager@googlegroups.com>'
-__version__ = '7.02.09'
+__version__ = '7.05.08'
 __license__ = 'Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)'
 
 #pylint: disable=wrong-import-position
@@ -142,14 +142,11 @@ from gamlib import glskus as SKU
 from gamlib import gluprop as UProp
 from gamlib import glverlibs
 
-import atom
 import gdata.apps.service
 import gdata.apps.audit
 import gdata.apps.audit.service
 import gdata.apps.contacts
 import gdata.apps.contacts.service
-import gdata.apps.sites
-import gdata.apps.sites.service
 # Import local library, does not include discovery documents
 import googleapiclient
 import googleapiclient.discovery
@@ -670,8 +667,10 @@ def accessErrorExitNonDirectory(api, errMsg):
                                                                 Ent.API, api])+[errMsg],
                                      ''))
 
-def ClientAPIAccessDeniedExit():
+def ClientAPIAccessDeniedExit(errMsg=None):
   stderrErrorMsg(Msg.API_ACCESS_DENIED)
+  if errMsg:
+    stderrErrorMsg(errMsg)
   missingScopes = API.getClientScopesSet(GM.Globals[GM.CURRENT_CLIENT_API])-GM.Globals[GM.CURRENT_CLIENT_API_SCOPES]
   if missingScopes:
     writeStderr(Msg.API_CHECK_CLIENT_AUTHORIZATION.format(GM.Globals[GM.OAUTH2_CLIENT_ID],
@@ -824,6 +823,9 @@ def deprecatedArgument(argument):
 
 def deprecatedArgumentExit(argument):
   usageErrorExit(f'{Cmd.ARGUMENT_ERROR_NAMES[Cmd.ARGUMENT_DEPRECATED][1]}: <{argument}>')
+
+def deprecatedCommandExit():
+  systemErrorExit(USAGE_ERROR_RC, Msg.SITES_COMMAND_DEPRECATED.format(Cmd.CommandDeprecated()))
 
 # Choices is the valid set of choices that was expected
 def formatChoiceList(choices):
@@ -1748,33 +1750,6 @@ def protectedSheetId(spreadsheet, sheetId):
       if protectedRange.get('range', {}).get('sheetId', -1) == sheetId and not protectedRange.get('requestingUserCanEdit', False):
         return True
   return False
-
-SITENAME_PATTERN = re.compile(r'^[a-z0-9\-_]+$')
-SITENAME_FORMAT_REQUIRED = '[a-z,0-9,-_]+'
-
-def validateSplitSiteName(fullSite):
-  siteParts = fullSite.lower().split('/', 1)
-  if (len(siteParts) == 1) or not siteParts[1]:
-    domain = GC.Values[GC.DOMAIN]
-    site = siteParts[0]
-  elif not siteParts[0]:
-    domain = GC.Values[GC.DOMAIN]
-    site = siteParts[1]
-  else:
-    domain = siteParts[0]
-    site = siteParts[1]
-  if SITENAME_PATTERN.match(site):
-    return (domain, site, f'{domain}/{site}')
-  return (domain, site, None)
-
-def getSiteName():
-  if Cmd.ArgumentsRemaining():
-    domain, site, domainSite = validateSplitSiteName(Cmd.Current())
-    if domainSite:
-      Cmd.Advance()
-      return (domain, site, domainSite)
-    invalidArgumentExit(SITENAME_FORMAT_REQUIRED)
-  missingArgumentExit(SITENAME_FORMAT_REQUIRED)
 
 def getString(item, checkBlank=False, optional=False, minLen=1, maxLen=None):
   if Cmd.ArgumentsRemaining():
@@ -4727,7 +4702,7 @@ def clearServiceCache(service):
 
 DISCOVERY_URIS = [googleapiclient.discovery.V1_DISCOVERY_URI, googleapiclient.discovery.V2_DISCOVERY_URI]
 
-# Used for API.CLOUDRESOURCEMANAGER, API.SERVICEUSAGE, API.IAM, API.IAP
+# Used for API.CLOUDRESOURCEMANAGER, API.SERVICEUSAGE, API.IAM
 def getAPIService(api, httpObj):
   api, version, v2discovery = API.getVersion(api)
   return googleapiclient.discovery.build(api, version, http=httpObj, cache_discovery=False,
@@ -4735,7 +4710,7 @@ def getAPIService(api, httpObj):
 
 def getService(api, httpObj):
 ### Drive v3beta
-  mapDriveURL = api == API.DRIVE3 and GC.Values[GC.DRIVE_V3_BETA]
+#  mapDriveURL = api == API.DRIVE3 and GC.Values[GC.DRIVE_V3_BETA]
   hasLocalJSON = API.hasLocalJSON(api)
   api, version, v2discovery = API.getVersion(api)
   if api in GM.Globals[GM.CURRENT_API_SERVICES] and version in GM.Globals[GM.CURRENT_API_SERVICES][api]:
@@ -4752,8 +4727,8 @@ def getService(api, httpObj):
         GM.Globals[GM.CURRENT_API_SERVICES].setdefault(api, {})
         GM.Globals[GM.CURRENT_API_SERVICES][api][version] = service._rootDesc.copy()
 ### Drive v3beta
-        if mapDriveURL:
-          setattr(service, '_baseUrl', getattr(service, '_baseUrl').replace('/v3/', '/v3beta/'))
+#        if mapDriveURL:
+#          setattr(service, '_baseUrl', getattr(service, '_baseUrl').replace('/v3/', '/v3beta/'))
         if GM.Globals[GM.CACHE_DISCOVERY_ONLY]:
           clearServiceCache(service)
         return service
@@ -5596,6 +5571,8 @@ def buildGAPIServiceObject(api, user, i=0, count=0, displayError=True):
   userEmail = getSaUser(user)
   httpObj = getHttpObj(cache=GM.Globals[GM.CACHE_DIR])
   service = getService(api, httpObj)
+  if api == API.MEET_BETA:
+    api = API.MEET
   credentials = getSvcAcctCredentials(api, userEmail)
   request = transportCreateRequest(httpObj)
   triesLimit = 3
@@ -5673,21 +5650,6 @@ def getContactsQuery(**kwargs):
 
 def getEmailAuditObject():
   return initGDataObject(gdata.apps.audit.service.AuditService(), API.EMAIL_AUDIT)
-
-def getSitesObject(entityType=Ent.DOMAIN, entityName=None, i=0, count=0):
-  if entityType == Ent.DOMAIN:
-    sitesObject = initGDataObject(gdata.apps.sites.service.SitesService(), API.SITES)
-    return (entityName or GC.Values[GC.DOMAIN], sitesObject)
-  userEmail, credentials = getGDataUserCredentials(API.SITES, entityName, i, count)
-  if not credentials:
-    return (userEmail, None)
-  if GC.Values[GC.NO_VERIFY_SSL]:
-    ssl._create_default_https_context = ssl._create_unverified_context
-  sitesObject = gdata.apps.sites.service.SitesService(source=GAM_USER_AGENT,
-                                                      additional_headers={'Authorization': f'Bearer {credentials.token}'})
-  if GC.Values[GC.DEBUG_LEVEL] > 0:
-    sitesObject.debug = True
-  return (userEmail, sitesObject)
 
 def getUserEmailFromID(uid, cd):
   try:
@@ -5789,14 +5751,18 @@ def convertUIDtoEmailAddressWithType(emailAddressOrUID, cd=None, sal=None, email
       return (uid, 'serviceaccount')
   return (normalizedEmailAddressOrUID, 'unknown')
 
+NON_EMAIL_MEMBER_PREFIXES = (
+                              "cbcm-browser.",
+                              "chrome-os-device.",
+                            )
 # Convert UID to email address
 def convertUIDtoEmailAddress(emailAddressOrUID, cd=None, emailTypes=None,
                              checkForCustomerId=False, ciGroupsAPI=False, aliasAllowed=True):
   if ciGroupsAPI:
-    if emailAddressOrUID.startswith('cbcm-browser.') or emailAddressOrUID.startswith('chrome-os-device.'):
+    if emailAddressOrUID.startswith(NON_EMAIL_MEMBER_PREFIXES):
       return emailAddressOrUID
     normalizedEmailAddressOrUID = normalizeEmailAddressOrUID(emailAddressOrUID, ciGroupsAPI=ciGroupsAPI)
-    if normalizedEmailAddressOrUID.startswith('cbcm-browser.') or normalizedEmailAddressOrUID.startswith('chrome-os-device.'):
+    if normalizedEmailAddressOrUID.startswith(NON_EMAIL_MEMBER_PREFIXES):
       return normalizedEmailAddressOrUID
   email, _ = convertUIDtoEmailAddressWithType(emailAddressOrUID, cd, emailTypes,
                                               checkForCustomerId, ciGroupsAPI, aliasAllowed)
@@ -6021,6 +5987,8 @@ def getCIGroupTransitiveMemberRoleFixType(groupName, tmember):
       member['type'] = Ent.TYPE_USER if not tid.endswith('.iam.gserviceaccount.com') else Ent.TYPE_SERVICE_ACCOUNT
     elif ttype == 'groups':
       member['type'] = Ent.TYPE_GROUP
+    elif tid.startswith('cbcm-browser.'):
+      member['type'] = Ent.TYPE_CBCM_BROWSER
     else:
       member['type'] = Ent.TYPE_OTHER
   else:
@@ -7356,11 +7324,11 @@ def addFieldToFieldsList(fieldName, fieldsChoiceMap, fieldsList):
 def _getFieldsList():
   return getString(Cmd.OB_FIELD_NAME_LIST).lower().replace('_', '').replace(',', ' ').split()
 
-def _addInitialField(fieldsList, initialField):
-  if isinstance(initialField, list):
-    fieldsList.extend(initialField)
-  else:
-    fieldsList.append(initialField)
+def _getRawFields(requiredField=None):
+  rawFields = getString(Cmd.OB_FIELDS)
+  if requiredField is None or requiredField in rawFields:
+    return rawFields
+  return f'{requiredField},{rawFields}'
 
 def CheckInputRowFilterHeaders(titlesList, rowFilter, rowDropFilter):
   status = True
@@ -7776,6 +7744,12 @@ def RowFilterMatch(row, titlesList, rowFilter, rowFilterModeAll, rowDropFilter, 
 #  }
 # fieldsList is the list of API fields
 def getFieldsList(myarg, fieldsChoiceMap, fieldsList, initialField=None, fieldsArg='fields', onlyFieldsArg=False):
+  def addInitialField():
+    if isinstance(initialField, list):
+      fieldsList.extend(initialField)
+    else:
+      fieldsList.append(initialField)
+
   def addMappedFields(mappedFields):
     if isinstance(mappedFields, list):
       fieldsList.extend(mappedFields)
@@ -7784,11 +7758,11 @@ def getFieldsList(myarg, fieldsChoiceMap, fieldsList, initialField=None, fieldsA
 
   if not onlyFieldsArg and myarg in fieldsChoiceMap:
     if not fieldsList and initialField is not None:
-      _addInitialField(fieldsList, initialField)
+      addInitialField()
     addMappedFields(fieldsChoiceMap[myarg])
   elif myarg == fieldsArg:
     if not fieldsList and initialField is not None:
-      _addInitialField(fieldsList, initialField)
+      addInitialField()
     for field in _getFieldsList():
       if field in fieldsChoiceMap:
         addMappedFields(fieldsChoiceMap[field])
@@ -7965,14 +7939,21 @@ class CSVPrintFile():
       fieldsList.append(fields)
       self.AddTitles(fields.replace('.', GC.Values[GC.CSV_OUTPUT_SUBFIELD_DELIMITER]))
 
+  def addInitialField(self, initialField, fieldsChoiceMap, fieldsList):
+    if isinstance(initialField, list):
+      for field in initialField:
+        self.AddField(field, fieldsChoiceMap, fieldsList)
+    else:
+      self.AddField(initialField, fieldsChoiceMap, fieldsList)
+
   def GetFieldsListTitles(self, fieldName, fieldsChoiceMap, fieldsList, initialField=None):
     if fieldName in fieldsChoiceMap:
       if not fieldsList and initialField is not None:
-        _addInitialField(fieldsList, initialField)
+        self.addInitialField(initialField, fieldsChoiceMap, fieldsList)
       self.AddField(fieldName, fieldsChoiceMap, fieldsList)
     elif fieldName == 'fields':
       if not fieldsList and initialField is not None:
-        _addInitialField(fieldsList, initialField)
+        self.addInitialField(initialField, fieldsChoiceMap, fieldsList)
       for field in _getFieldsList():
         if field in fieldsChoiceMap:
           self.AddField(field, fieldsChoiceMap, fieldsList)
@@ -8489,14 +8470,18 @@ class CSVPrintFile():
         self.AddTitle(title)
     return RowFilterMatch(row, self.titlesList, self.rowFilter, self.rowFilterMode, self.rowDropFilter, self.rowDropFilterMode)
 
-  def UpdateMimeTypeCounts(self, row, mimeTypeInfo):
+  def UpdateMimeTypeCounts(self, row, mimeTypeInfo, sizeField):
+    saveList = self.titlesList[:]
+    saveSet = set(self.titlesSet)
     for title in row:
       if title not in self.titlesSet:
         self.AddTitle(title)
     if RowFilterMatch(row, self.titlesList, self.rowFilter, self.rowFilterMode, self.rowDropFilter, self.rowDropFilterMode):
       mimeTypeInfo.setdefault(row['mimeType'], {'count': 0, 'size': 0})
       mimeTypeInfo[row['mimeType']]['count'] += 1
-      mimeTypeInfo[row['mimeType']]['size'] += int(row.get('size', '0'))
+      mimeTypeInfo[row['mimeType']]['size'] += int(row.get(sizeField, '0'))
+    self.titlesList = saveList[:]
+    self.titlesSet = set(saveSet)
 
   def SetZeroBlankMimeTypeCounts(self, zeroBlankMimeTypeCounts):
     self.zeroBlankMimeTypeCounts = zeroBlankMimeTypeCounts
@@ -9861,7 +9846,7 @@ def MultiprocessGAMCommands(items, showCmds):
     if GM.Globals[GM.MULTIPROCESS_EXIT_CONDITION] is not None and checkChildProcessRC(result[1]):
       GM.Globals[GM.MULTIPROCESS_EXIT_PROCESSING] = True
 
-  def signal_handler(sig, frame):
+  def signal_handler(*_):
     nonlocal controlC
     controlC = True
 
@@ -11361,13 +11346,32 @@ def doEnableAPIs():
       url = f'https://console.cloud.google.com/apis/enableflow?apiid={apiid}&project={projectId}'
       writeStdout(f'    {url}\n\n')
 
+def _waitForSvcAcctCompletion(i):
+  sleep_time = i*5
+  if i > 3:
+    sys.stdout.write(Msg.WAITING_FOR_ITEM_CREATION_TO_COMPLETE_SLEEPING.format(Ent.Singular(Ent.SVCACCT), sleep_time))
+  time.sleep(sleep_time)
+
 def _grantRotateRights(iam, projectId, service_account, email, account_type='serviceAccount'):
-  printEntityMessage([Ent.PROJECT, projectId, Ent.SVCACCT, email],
-                     Msg.HAS_RIGHTS_TO_ROTATE_OWN_PRIVATE_KEY.format(email, service_account))
   body = {'policy': {'bindings': [{'role': 'roles/iam.serviceAccountKeyAdmin',
                                    'members': [f'{account_type}:{email}']}]}}
-  callGAPI(iam.projects().serviceAccounts(), 'setIamPolicy',
-           resource=f'projects/{projectId}/serviceAccounts/{service_account}', body=body)
+  maxRetries = 10
+  printEntityMessage([Ent.PROJECT, projectId, Ent.SVCACCT, email],
+                     Msg.HAS_RIGHTS_TO_ROTATE_OWN_PRIVATE_KEY.format(email, service_account))
+  for retry in range(1, maxRetries+1):
+    try:
+      callGAPI(iam.projects().serviceAccounts(), 'setIamPolicy',
+               throwReasons=[GAPI.INVALID_ARGUMENT],
+               resource=f'projects/{projectId}/serviceAccounts/{service_account}', body=body)
+      return True
+    except GAPI.invalidArgument as e:
+      entityActionFailedWarning([Ent.PROJECT, projectId, Ent.SVCACCT, service_account], str(e))
+      if 'does not exist' not in str(e) or retry == maxRetries:
+        return False
+      _waitForSvcAcctCompletion(retry)
+    except Exception as e:
+      entityActionFailedWarning([Ent.PROJECT, projectId, Ent.SVCACCT, service_account], str(e))
+      return False
 
 def _createOauth2serviceJSON(httpObj, projectInfo, svcAcctInfo, create_key=True):
   iam = getAPIService(API.IAM, httpObj)
@@ -11392,24 +11396,12 @@ def _createOauth2serviceJSON(httpObj, projectInfo, svcAcctInfo, create_key=True)
                                              clientId=service_account['uniqueId']):
     return False
   sa_email = service_account['name'].rsplit('/', 1)[-1]
-  _grantRotateRights(iam, projectInfo['projectId'], sa_email, sa_email)
-  return True
-
-def setGAMProjectConsentScreen(httpObj, projectId, appInfo):
-  sys.stdout.write(Msg.SETTING_GAM_PROJECT_CONSENT_SCREEN)
-  iap = getAPIService(API.IAP, httpObj)
-  try:
-    callGAPI(iap.projects().brands(), 'create',
-             throwReasons=[GAPI.ALREADY_EXISTS, GAPI.INVALID_ARGUMENT],
-             parent=f'projects/{projectId}', body=appInfo)
-  except (GAPI.invalidArgument, GAPI.alreadyExists):
-    pass
+  return _grantRotateRights(iam, projectInfo['projectId'], sa_email, sa_email)
 
 def _createClientSecretsOauth2service(httpObj, login_hint, appInfo, projectInfo, svcAcctInfo, create_key=True):
   def _checkClientAndSecret(csHttpObj, client_id, client_secret):
     post_data = {'client_id': client_id, 'client_secret': client_secret,
                  'code': 'ThisIsAnInvalidCodeOnlyBeingUsedToTestIfClientAndSecretAreValid',
-#                 'redirect_uri': 'urn:ietf:wg:oauth:2.0:oob', 'grant_type': 'authorization_code'}
                  'redirect_uri': 'http://127.0.0.1:8080', 'grant_type': 'authorization_code'}
     _, content = csHttpObj.request(API.GOOGLE_OAUTH2_TOKEN_ENDPOINT, 'POST', urlencode(post_data),
                                    headers={'Content-type': 'application/x-www-form-urlencoded'})
@@ -11434,16 +11426,14 @@ def _createClientSecretsOauth2service(httpObj, login_hint, appInfo, projectInfo,
 
   if not enableGAMProjectAPIs(httpObj, projectInfo['projectId'], login_hint, False):
     return
-  if appInfo:
-    setGAMProjectConsentScreen(httpObj, projectInfo['projectId'], appInfo)
-  console_url = f'https://console.cloud.google.com/apis/credentials/oauthclient?project={projectInfo["projectId"]}&authuser={login_hint}'
+  sys.stdout.write(Msg.SETTING_GAM_PROJECT_CONSENT_SCREEN_CREATING_CLIENT)
+  console_url = f'https://console.cloud.google.com/auth/clients?project={projectInfo["projectId"]}&authuser={login_hint}'
   csHttpObj = getHttpObj()
   while True:
-    sys.stdout.write(Msg.CREATE_PROJECT_INSTRUCTIONS.format(console_url))
+    sys.stdout.write(Msg.CREATE_CLIENT_INSTRUCTIONS.format(console_url, appInfo['applicationTitle'], appInfo['supportEmail']))
     client_id = readStdin(Msg.ENTER_YOUR_CLIENT_ID).strip()
     if not client_id:
       client_id = readStdin('').strip()
-    sys.stdout.write(Msg.GO_BACK_TO_YOUR_BROWSER_AND_COPY_YOUR_CLIENT_SECRET_VALUE)
     client_secret = readStdin(Msg.ENTER_YOUR_CLIENT_SECRET).strip()
     if not client_secret:
       client_secret = readStdin('').strip()
@@ -11451,7 +11441,6 @@ def _createClientSecretsOauth2service(httpObj, login_hint, appInfo, projectInfo,
     if client_valid:
       break
     sys.stdout.write('\n')
-# Deleted: "redirect_uris": ["http://localhost", "urn:ietf:wg:oauth:2.0:oob"],
   cs_data = f'''{{
     "installed": {{
         "auth_provider_x509_cert_url": "{API.GOOGLE_AUTH_PROVIDER_X509_CERT_URL}",
@@ -11464,7 +11453,6 @@ def _createClientSecretsOauth2service(httpObj, login_hint, appInfo, projectInfo,
     }}
 }}'''
   writeFile(GC.Values[GC.CLIENT_SECRETS_JSON], cs_data, continueOnError=False)
-  sys.stdout.write(Msg.GO_BACK_TO_YOUR_BROWSER_AND_CLICK_OK_TO_CLOSE_THE_OAUTH_CLIENT_POPUP)
   sys.stdout.write(Msg.TRUST_GAM_CLIENT_ID.format(GAM, client_id))
   readStdin('')
   if not _createOauth2serviceJSON(httpObj, projectInfo, svcAcctInfo, create_key):
@@ -11590,7 +11578,7 @@ def _getLoginHintProjectInfo(createCmd):
         _checkProjectName(projectInfo['name'])
       elif _getSvcAcctInfo(myarg, svcAcctInfo):
         pass
-      elif createCmd and _getAppInfo(myarg, appInfo):
+      elif _getAppInfo(myarg, appInfo):
         pass
       elif myarg in {'algorithm', 'localkeysize', 'validityhours', 'yubikey'}:
         Cmd.Backup()
@@ -11874,14 +11862,15 @@ def doCreateProject():
 
 # gam use project [<EmailAddress>] [<ProjectID>]
 # gam use project [admin <EmailAddress>] [project <ProjectID>]
+#	[appname <String>] [supportemail <EmailAddress>]
 #	[saname <ServiceAccountName>] [sadisplayname <ServiceAccountDisplayName>] [sadescription <ServiceAccountDescription>]
 #	[(algorithm KEY_ALG_RSA_1024|KEY_ALG_RSA_2048)|
 #	 (localkeysize 1024|2048|4096 [validityhours <Number>])|
 #	 (yubikey yubikey_pin yubikey_slot AUTHENTICATION yubikey_serialnumber <String>)]
 def doUseProject():
   _checkForExistingProjectFiles([GC.Values[GC.OAUTH2SERVICE_JSON], GC.Values[GC.CLIENT_SECRETS_JSON]])
-  _, httpObj, login_hint, _, projectInfo, svcAcctInfo, create_key = _getLoginHintProjectInfo(False)
-  _createClientSecretsOauth2service(httpObj, login_hint, {}, projectInfo, svcAcctInfo, create_key)
+  _, httpObj, login_hint, appInfo, projectInfo, svcAcctInfo, create_key = _getLoginHintProjectInfo(False)
+  _createClientSecretsOauth2service(httpObj, login_hint, appInfo, projectInfo, svcAcctInfo, create_key)
 
 # gam update project [[admin] <EmailAddress>] [<ProjectIDEntity>]
 def doUpdateProject():
@@ -12577,12 +12566,6 @@ def doProcessSvcAcctKeys(mode=None, iam=None, projectId=None, clientEmail=None, 
       else:
         unknownArgumentExit()
 
-  def waitForCompletion(i):
-    sleep_time = i*5
-    if i > 3:
-      sys.stdout.write(Msg.WAITING_FOR_ITEM_CREATION_TO_COMPLETE_SLEEPING.format(Ent.Singular(Ent.SVCACCT), sleep_time))
-    time.sleep(sleep_time)
-
   local_key_size = 2048
   validityHours = 0
   body = {}
@@ -12652,12 +12635,12 @@ def doProcessSvcAcctKeys(mode=None, iam=None, projectId=None, clientEmail=None, 
         if retry == maxRetries:
           entityActionFailedWarning([Ent.PROJECT, projectId, Ent.SVCACCT, clientEmail], str(e))
           return False
-        waitForCompletion(retry)
+        _waitForSvcAcctCompletion(retry)
       except GAPI.permissionDenied:
         if retry == maxRetries:
           entityActionFailedWarning([Ent.PROJECT, projectId, Ent.SVCACCT, clientEmail], Msg.UPDATE_PROJECT_TO_VIEW_MANAGE_SAKEYS)
           return False
-        waitForCompletion(retry)
+        _waitForSvcAcctCompletion(retry)
       except GAPI.badRequest as e:
         entityActionFailedWarning([Ent.PROJECT, projectId, Ent.SVCACCT, clientEmail], str(e))
         return False
@@ -12670,7 +12653,7 @@ def doProcessSvcAcctKeys(mode=None, iam=None, projectId=None, clientEmail=None, 
           new_data['private_key'] = ''
           newPrivateKeyId = ''
           break
-        waitForCompletion(retry)
+        _waitForSvcAcctCompletion(retry)
     new_data['private_key_id'] = newPrivateKeyId
     oauth2service_data = _formatOAuth2ServiceData(new_data)
   else:
@@ -12687,7 +12670,7 @@ def doProcessSvcAcctKeys(mode=None, iam=None, projectId=None, clientEmail=None, 
         if retry == maxRetries:
           entityActionFailedWarning([Ent.PROJECT, projectId, Ent.SVCACCT, clientEmail], Msg.UPDATE_PROJECT_TO_VIEW_MANAGE_SAKEYS)
           return False
-        waitForCompletion(retry)
+        _waitForSvcAcctCompletion(retry)
       except GAPI.badRequest as e:
         entityActionFailedWarning([Ent.PROJECT, projectId, Ent.SVCACCT, clientEmail], str(e))
         return False
@@ -12728,7 +12711,7 @@ def doProcessSvcAcctKeys(mode=None, iam=None, projectId=None, clientEmail=None, 
           if retry == maxRetries:
             entityActionFailedWarning([Ent.SVCACCT_KEY, keyName], Msg.UPDATE_PROJECT_TO_VIEW_MANAGE_SAKEYS)
             break
-          waitForCompletion(retry)
+          _waitForSvcAcctCompletion(retry)
         except GAPI.badRequest as e:
           entityActionFailedWarning([Ent.SVCACCT_KEY, keyName], str(e), i, count)
           break
@@ -13090,13 +13073,13 @@ def _checkDataRequiredServices(result, tryDate, dataRequiredServices, parameterS
 #  0: Backup to earlier date
 #  1: Data available
   oneDay = datetime.timedelta(days=1)
-  warnings = result.get('warnings', [])
+  dataWarnings = result.get('warnings', [])
   usageReports = result.get('usageReports', [])
   # move to day before if we don't have at least one usageReport with parameters
   if not usageReports or not usageReports[0].get('parameters', []):
     tryDateTime = datetime.datetime.strptime(tryDate, YYYYMMDD_FORMAT)-oneDay
     return (0, tryDateTime.strftime(YYYYMMDD_FORMAT), None)
-  for warning in warnings:
+  for warning in dataWarnings:
     if warning['code'] == 'PARTIAL_DATA_AVAILABLE':
       for app in warning['data']:
         if app['key'] == 'application' and app['value'] != 'docs' and app['value'] in dataRequiredServices:
@@ -13130,6 +13113,7 @@ CUSTOMER_REPORT_SERVICES = {
   'app_maker',
   'apps_scripts',
   'calendar',
+  'chat',
   'classroom',
   'cros',
   'device_management',
@@ -13143,6 +13127,7 @@ CUSTOMER_REPORT_SERVICES = {
 
 USER_REPORT_SERVICES = {
   'accounts',
+  'chat',
   'classroom',
   'docs',
   'drive',
@@ -13444,8 +13429,8 @@ def doReportUsage():
       break
     except GAPI.invalidInput as e:
       systemErrorExit(GOOGLE_API_ERROR_RC, str(e))
-    except GAPI.forbidden:
-      accessErrorExit(None)
+    except GAPI.forbidden as e:
+      accessErrorExit(None, str(e))
   if startUseDate:
     reportName = f'{report.capitalize()} Usage Report - {startUseDate}:{endUseDate}'
   else:
@@ -13521,7 +13506,7 @@ REPORT_ACTIVITIES_TIME_OBJECTS = {'time'}
 #	[event|events <EventNameList>] [ip <String>]
 #	[groupidfilter <String>]
 #	[maxactivities <Number>] [maxevents <Number>] [maxresults <Number>]
-#	[countsonly [summary] [eventrowfilter]]
+#	[countsonly [bydate|summary] [eventrowfilter]]
 #	(addcsvdata <FieldName> <String>)* [shownoactivities]
 # gam report users|user [todrive <ToDriveAttribute>*]
 #	[(user all|<UserItem>)|(orgunit|org|ou <OrgUnitPath> [showorgunit])|(select <UserTypeEntity>)]
@@ -13794,8 +13779,8 @@ def doReport():
   filterTimes = {}
   maxActivities = maxEvents = 0
   maxResults = 1000
-  aggregateByDate = aggregateByUser = convertMbToGb = countsOnly = eventRowFilter = exitUserLoop = \
-    noAuthorizedApps = normalizeUsers = select = summary = userCustomerRange = False
+  aggregateByDate = aggregateByUser = convertMbToGb = countsOnly = countsByDate = countsSummary = \
+    eventRowFilter = exitUserLoop = noAuthorizedApps = normalizeUsers = select = userCustomerRange = False
   limitDateChanges = -1
   allVerifyUser = userKey = 'all'
   cd = orgUnit = orgUnitId = None
@@ -13893,8 +13878,10 @@ def doReport():
       actorIpAddress = getString(Cmd.OB_STRING)
     elif activityReports and myarg == 'countsonly':
       countsOnly = True
+    elif activityReports and myarg == 'bydate':
+      countsByDate = True
     elif activityReports and myarg == 'summary':
-      summary = True
+      countsSummary = True
     elif activityReports and myarg == 'eventrowfilter':
       eventRowFilter = True
     elif activityReports and myarg == 'groupidfilter':
@@ -13928,6 +13915,8 @@ def doReport():
       unknownArgumentExit()
   if aggregateByDate and aggregateByUser:
     usageErrorExit(Msg.ARE_MUTUALLY_EXCLUSIVE.format('aggregateByDate', 'aggregateByUser'))
+  if countsOnly and countsByDate and countsSummary:
+    usageErrorExit(Msg.ARE_MUTUALLY_EXCLUSIVE.format('bydate', 'summary'))
   parameters = ','.join(parameters) if parameters else None
   if usageReports and not includeServices:
     includeServices = set(fullDataServices)
@@ -14038,8 +14027,8 @@ def doReport():
             printErrorMessage(BAD_REQUEST_RC, Msg.BAD_REQUEST)
             exitUserLoop = True
           break
-        except GAPI.forbidden:
-          accessErrorExit(None)
+        except GAPI.forbidden as e:
+          accessErrorExit(None, str(e))
         startDateTime += oneDay
       if exitUserLoop:
         break
@@ -14119,8 +14108,8 @@ def doReport():
         continue
       except GAPI.invalidInput as e:
         systemErrorExit(GOOGLE_API_ERROR_RC, str(e))
-      except GAPI.forbidden:
-        accessErrorExit(None)
+      except GAPI.forbidden as e:
+        accessErrorExit(None, str(e))
       startDateTime += oneDay
     csvPF.writeCSVfile(f'Customer Report - {tryDate}')
   else: # activityReports
@@ -14144,8 +14133,12 @@ def doReport():
       pageMessage = getPageMessage()
       users = [normalizeEmailAddressOrUID(userKey)]
       orgUnitId = None
+    zeroEventCounts = {}
     if not eventNames:
       eventNames.append(None)
+    else:
+      for eventName in eventNames:
+        zeroEventCounts[eventName] = 0
     i = 0
     count = len(users)
     for user in users:
@@ -14177,9 +14170,22 @@ def doReport():
           accessErrorExit(None)
         for activity in feed:
           events = activity.pop('events')
-          actor = activity['actor'].get('email', activity['actor'].get('key', UNKNOWN))
+          actor = activity['actor'].get('email')
+          if not actor:
+            actor = 'id:'+activity['actor'].get('profileId', UNKNOWN)
           if showOrgUnit:
             activity['actor']['orgUnitPath'] = userOrgUnits.get(actor, UNKNOWN)
+          if countsOnly and countsByDate:
+            eventTime = activity.get('id', {}).get('time', UNKNOWN)
+            if eventTime != UNKNOWN:
+              try:
+                eventTime, _ = iso8601.parse_date(eventTime)
+              except (iso8601.ParseError, OverflowError):
+                eventTime = UNKNOWN
+            if eventTime != UNKNOWN:
+              eventDate = eventTime.strftime(YYYYMMDD_FORMAT)
+            else:
+              eventDate = UNKNOWN
           if not countsOnly or eventRowFilter:
             activity_row = flattenJSON(activity, timeObjects=REPORT_ACTIVITIES_TIME_OBJECTS)
             purge_parameters = True
@@ -14230,18 +14236,32 @@ def doReport():
                 if numEvents >= maxEvents > 0:
                   break
               elif csvPF.CheckRowTitles(row):
-                if not summary:
+                eventName = event['name']
+                if not countsSummary:
                   eventCounts.setdefault(actor, {})
-                  eventCounts[actor].setdefault(event['name'], 0)
-                  eventCounts[actor][event['name']] += 1
+                  if not countsByDate:
+                    eventCounts[actor].setdefault(eventName, 0)
+                    eventCounts[actor][eventName] += 1
+                  else:
+                    eventCounts[actor].setdefault(eventDate, {})
+                    eventCounts[actor][eventDate].setdefault(eventName, 0)
+                    eventCounts[actor][eventDate][eventName] += 1
                 else:
-                  eventCounts.setdefault(event['name'], 0)
-                  eventCounts[event['name']] += 1
-          elif not summary:
+                  eventCounts.setdefault(eventName, 0)
+                  eventCounts[eventName] += 1
+          elif not countsSummary:
             eventCounts.setdefault(actor, {})
-            for event in events:
-              eventCounts[actor].setdefault(event['name'], 0)
-              eventCounts[actor][event['name']] += 1
+            if not countsByDate:
+              for event in events:
+                eventName = event['name']
+                eventCounts[actor].setdefault(eventName, 0)
+                eventCounts[actor][eventName] += 1
+            else:
+              for event in events:
+                eventName = event['name']
+                eventCounts[actor].setdefault(eventDate, {})
+                eventCounts[actor][eventDate].setdefault(eventName, 0)
+                eventCounts[actor][eventDate][eventName] += 1
           else:
             for event in events:
               eventCounts.setdefault(event['name'], 0)
@@ -14256,31 +14276,46 @@ def doReport():
     else:
       if eventRowFilter:
         csvPF.SetRowFilter([], GC.Values[GC.CSV_OUTPUT_ROW_FILTER_MODE])
-      if not summary:
-        csvPF.SetTitles('emailAddress')
+      if not countsSummary:
+        titles = ['emailAddress']
+        if countsOnly and countsByDate:
+          titles.append('date')
+        csvPF.SetTitles(titles)
+        csvPF.SetSortTitles(titles)
         if addCSVData:
           csvPF.AddTitles(sorted(addCSVData.keys()))
         if eventCounts:
-          for actor, events in iter(eventCounts.items()):
-            row = {'emailAddress': actor}
-            for event, count in iter(events.items()):
-              row[event] = count
-            if addCSVData:
-              row.update(addCSVData)
-            csvPF.WriteRowTitles(row)
+          if not countsByDate:
+            for actor, events in iter(eventCounts.items()):
+              row = {'emailAddress': actor}
+              row.update(zeroEventCounts)
+              for event, count in iter(events.items()):
+                row[event] = count
+              if addCSVData:
+                row.update(addCSVData)
+              csvPF.WriteRowTitles(row)
+          else:
+            for actor, eventDates in iter(eventCounts.items()):
+              for eventDate, events in iter(eventDates.items()):
+                row = {'emailAddress': actor, 'date': eventDate}
+                row.update(zeroEventCounts)
+                for event, count in iter(events.items()):
+                  row[event] = count
+                if addCSVData:
+                  row.update(addCSVData)
+                csvPF.WriteRowTitles(row)
         elif showNoActivities:
           row = {'emailAddress': 'NoActivities'}
           if addCSVData:
             row.update(addCSVData)
             csvPF.WriteRow(row)
-        csvPF.SetSortTitles(['emailAddress'])
       else:
         csvPF.SetTitles(['event', 'count'])
         if addCSVData:
           csvPF.AddTitles(sorted(addCSVData.keys()))
         if eventCounts:
-          for event in sorted(eventCounts):
-            row = {'event': event, 'count': eventCounts[event]}
+          for event, count in sorted(iter(eventCounts.items())):
+            row = {'event': event, 'count': count}
             if addCSVData:
               row.update(addCSVData)
             csvPF.WriteRow(row)
@@ -15058,15 +15093,15 @@ def doCreateResoldCustomer():
   except (GAPI.badRequest, GAPI.resourceNotFound, GAPI.forbidden, GAPI.invalid) as e:
     entityActionFailedWarning([Ent.CUSTOMER_DOMAIN, body['customerDomain']], str(e))
 
-# gam update resoldcustomer <CustomerID> [customer_auth_token <String>] <ResoldCustomerAttribute>+
+# gam update resoldcustomer <CustomerID> <ResoldCustomerAttribute>+
 def doUpdateResoldCustomer():
   res = buildGAPIObject(API.RESELLER)
   customerId = getString(Cmd.OB_CUSTOMER_ID)
-  customerAuthToken, body = _getResoldCustomerAttr()
+  _, body = _getResoldCustomerAttr()
   try:
     callGAPI(res.customers(), 'patch',
              throwReasons=GAPI.RESELLER_THROW_REASONS,
-             customerId=customerId, body=body, customerAuthToken=customerAuthToken, fields='')
+             customerId=customerId, body=body, fields='')
     entityActionPerformed([Ent.CUSTOMER_ID, customerId])
   except (GAPI.badRequest, GAPI.resourceNotFound, GAPI.forbidden, GAPI.invalid) as e:
     entityActionFailedWarning([Ent.CUSTOMER_ID, customerId], str(e))
@@ -15085,6 +15120,7 @@ def doInfoResoldCustomer():
                             customerId=customerId)
     if not FJQC.formatJSON:
       printKeyValueList(['Customer ID', customerInfo['customerId']])
+      printKeyValueList(['Customer Type', customerInfo['customerType']])
       printKeyValueList(['Customer Domain', customerInfo['customerDomain']])
       if 'customerDomainVerified' in customerInfo:
         printKeyValueList(['Customer Domain Verified', customerInfo['customerDomainVerified']])
@@ -16519,7 +16555,7 @@ def doInfoAdminRole():
       fieldsList.append('rolePrivileges')
     else:
       unknownArgumentExit()
-  fields = ','.join(set(fieldsList))
+  fields = getFieldsFromFieldsList(fieldsList)
   try:
     role = callGAPI(cd.roles(), 'get',
                     throwReasons=[GAPI.NOT_FOUND, GAPI.FORBIDDEN, GAPI.FAILED_PRECONDITION,
@@ -17226,7 +17262,7 @@ def checkOrgUnitPathExists(cd, orgUnitPath, i=0, count=0, showError=False):
   return (False, orgUnitPath, orgUnitPath)
 
 def _batchMoveCrOSesToOrgUnit(cd, orgUnitPath, orgUnitId, i, count, items, quickCrOSMove, fromOrgUnitPath=None):
-  def _callbackMoveCrOSesToOrgUnit(request_id, response, exception):
+  def _callbackMoveCrOSesToOrgUnit(request_id, _, exception):
     ri = request_id.splitlines()
     if exception is None:
       if not fromOrgUnitPath:
@@ -17307,7 +17343,7 @@ def _batchMoveCrOSesToOrgUnit(cd, orgUnitPath, orgUnitId, i, count, items, quick
 
 def _batchMoveUsersToOrgUnit(cd, orgUnitPath, i, count, items, fromOrgUnitPath=None):
   _MOVE_USER_REASON_TO_MESSAGE_MAP = {GAPI.USER_NOT_FOUND: Msg.DOES_NOT_EXIST, GAPI.DOMAIN_NOT_FOUND: Msg.SERVICE_NOT_APPLICABLE, GAPI.FORBIDDEN: Msg.SERVICE_NOT_APPLICABLE}
-  def _callbackMoveUsersToOrgUnit(request_id, response, exception):
+  def _callbackMoveUsersToOrgUnit(request_id, _, exception):
     ri = request_id.splitlines()
     if exception is None:
       if not fromOrgUnitPath:
@@ -17656,9 +17692,9 @@ def _getOrgUnits(cd, orgUnitPath, fieldsList, listType, showParent, batchSubOrgs
     if 'parentOrgUnitId' not in fieldsList:
       localFieldsList.append('parentOrgUnitId')
       deleteParentOrgUnitId = True
-    fields = ','.join(set(localFieldsList))
+    fields = getFieldsFromFieldsList(localFieldsList)
   else:
-    fields = ','.join(set(fieldsList))
+    fields = getFieldsFromFieldsList(fieldsList)
   listfields = f'organizationUnits({fields})'
   if listType == 'all' and  orgUnitPath == '/':
     printGettingAllAccountEntities(Ent.ORGANIZATIONAL_UNIT)
@@ -18886,6 +18922,7 @@ CONTACT_USER_DEFINED_FIELDS = 'User Defined Fields'
 CONTACT_WEBSITES = 'Websites'
 #
 class ContactsManager():
+
   CONTACT_ARGUMENT_TO_PROPERTY_MAP = {
     'json': CONTACT_JSON,
     'name': CONTACT_NAME,
@@ -21208,6 +21245,8 @@ def _getPeopleOtherContacts(people, entityType, user, i=0, count=0):
       resourceName = contact.pop('resourceName')
       otherContacts[resourceName] = contact
     return otherContacts
+  except GAPI.permissionDenied as e:
+    ClientAPIAccessDeniedExit(str(e))
   except (GAPI.serviceNotAvailable, GAPI.forbidden):
     entityUnknownWarning(entityType, user, i, count)
   return None
@@ -21264,6 +21303,8 @@ def queryPeopleContacts(people, contactQuery, fields, sortOrder, entityType, use
       showMessage = pageMessage.replace(TOTAL_ITEMS_MARKER, str(totalItems))
       writeGotMessage(showMessage.replace('{0}', str(Ent.Choose(Ent.PEOPLE_CONTACT, totalItems))))
     return entityList
+  except (GAPI.permissionDenied, GAPI.failedPrecondition) as e:
+    ClientAPIAccessDeniedExit(str(e))
   except (GAPI.serviceNotAvailable, GAPI.forbidden):
     entityUnknownWarning(entityType, user, i, count)
   return None
@@ -21290,6 +21331,8 @@ def queryPeopleOtherContacts(people, contactQuery, fields, entityType, user, i=0
         showMessage = pageMessage.replace(TOTAL_ITEMS_MARKER, str(totalItems))
         writeGotMessage(showMessage.replace('{0}', str(Ent.Choose(Ent.OTHER_CONTACT, totalItems))))
     return entityList
+  except GAPI.permissionDenied as e:
+    ClientAPIAccessDeniedExit(str(e))
   except (GAPI.serviceNotAvailable, GAPI.forbidden):
     entityUnknownWarning(entityType, user, i, count)
   return None
@@ -21310,6 +21353,8 @@ def getPeopleContactGroupsInfo(people, entityType, entityName, i, count):
         if group['formattedName'] != group['name']:
           contactGroupNames.setdefault(group['name'], [])
           contactGroupNames[group['name']].append(group['resourceName'])
+  except GAPI.permissionDenied as e:
+    ClientAPIAccessDeniedExit(str(e))
   except GAPI.forbidden:
     userPeopleServiceNotEnabledWarning(entityName, i, count)
     return (contactGroupIDs, False)
@@ -21408,6 +21453,8 @@ def createUserPeopleContact(users):
         csvPF.WriteRow(row)
     except GAPI.invalidArgument as e:
       entityActionFailedWarning([entityType, user, peopleEntityType, None], str(e), i, count)
+    except (GAPI.permissionDenied, GAPI.failedPrecondition) as e:
+      ClientAPIAccessDeniedExit(str(e))
     except (GAPI.serviceNotAvailable, GAPI.forbidden):
       ClientAPIAccessDeniedExit()
   if csvPF:
@@ -21571,6 +21618,8 @@ def _clearUpdatePeopleContacts(users, updateContacts):
         entityActionFailedWarning([entityType, user, peopleEntityType, resourceName], str(e), j, jcount)
       except (GAPI.notFound, GAPI.internalError):
         entityActionFailedWarning([entityType, user, peopleEntityType, resourceName], Msg.DOES_NOT_EXIST, j, jcount)
+      except (GAPI.permissionDenied, GAPI.failedPrecondition) as e:
+        ClientAPIAccessDeniedExit(str(e))
       except (GAPI.serviceNotAvailable, GAPI.forbidden):
         ClientAPIAccessDeniedExit()
     Ind.Decrement()
@@ -21719,6 +21768,8 @@ def dedupReplaceDomainUserPeopleContacts(users):
         entityActionFailedWarning([entityType, user, peopleEntityType, resourceName], str(e), j, jcount)
       except (GAPI.notFound, GAPI.internalError):
         entityActionFailedWarning([entityType, user, peopleEntityType, resourceName], Msg.DOES_NOT_EXIST, j, jcount)
+      except (GAPI.permissionDenied, GAPI.failedPrecondition) as e:
+        ClientAPIAccessDeniedExit(str(e))
       except (GAPI.serviceNotAvailable, GAPI.forbidden):
         ClientAPIAccessDeniedExit()
     Ind.Decrement()
@@ -21772,6 +21823,8 @@ def deleteUserPeopleContacts(users):
         entityActionPerformed([entityType, user, peopleEntityType, resourceName], j, jcount)
       except (GAPI.notFound, GAPI.internalError):
         entityActionFailedWarning([entityType, user, peopleEntityType, resourceName], Msg.DOES_NOT_EXIST, j, jcount)
+      except (GAPI.permissionDenied, GAPI.failedPrecondition) as e:
+        ClientAPIAccessDeniedExit(str(e))
       except (GAPI.serviceNotAvailable, GAPI.forbidden):
         ClientAPIAccessDeniedExit()
     Ind.Decrement()
@@ -21829,12 +21882,29 @@ def _printPerson(entityTypeName, user, person, csvPF, FJQC, parameters):
                             'JSON': json.dumps(cleanJSON(person),
                                                ensure_ascii=False, sort_keys=True)})
 
+PEOPLE_CONTACT_OBJECT_KEYS = {
+  'addresses': 'type',
+  'calendarUrls': 'type',
+  'emailAddresses': 'type',
+  'events': 'type',
+  'externalIds': 'type',
+  'genders': 'value',
+  'imClients': 'type',
+  'locations': 'type',
+  'miscKeywords': 'type',
+  'nicknames': 'type',
+  'organizations': 'type',
+  'relations': 'type',
+  'urls': 'type',
+  'userDefined': 'key',
+  }
+
 def _showPerson(userEntityType, user, entityType, person, i, count, FJQC, parameters):
   _processPersonMetadata(person, parameters)
   if not FJQC.formatJSON:
     printEntity([userEntityType, user, entityType, person['resourceName']], i, count)
     Ind.Increment()
-    showJSON(None, person)
+    showJSON(None, person, dictObjectsKey=PEOPLE_CONTACT_OBJECT_KEYS)
     Ind.Decrement()
   else:
     printLine(json.dumps(cleanJSON(person), ensure_ascii=False, sort_keys=True))
@@ -22050,6 +22120,8 @@ def _infoPeople(users, entityType, source):
       except GAPI.invalidArgument as e:
         entityActionFailedWarning([entityType, user, peopleEntityType, resourceName], str(e), j, jcount)
         continue
+      except (GAPI.permissionDenied, GAPI.failedPrecondition) as e:
+        ClientAPIAccessDeniedExit(str(e))
       except (GAPI.serviceNotAvailable, GAPI.forbidden):
         ClientAPIAccessDeniedExit()
       if showContactGroups and contactGroupIDs:
@@ -22120,8 +22192,7 @@ def printShowUserPeopleContacts(users):
     if not fieldsList:
       ofields = _getPersonFields(PEOPLE_OTHER_CONTACTS_FIELDS_CHOICE_MAP, PEOPLE_CONTACTS_DEFAULT_FIELDS, fieldsList, parameters)
     else:
-      fieldsList = [PEOPLE_OTHER_CONTACTS_FIELDS_CHOICE_MAP[field.lower()] for field in fieldsList if field.lower() in PEOPLE_OTHER_CONTACTS_FIELDS_CHOICE_MAP]
-      ofields = ','.join(set(fieldsList))
+      ofields = getFieldsFromFieldsList([PEOPLE_OTHER_CONTACTS_FIELDS_CHOICE_MAP[field.lower()] for field in fieldsList if field.lower() in PEOPLE_OTHER_CONTACTS_FIELDS_CHOICE_MAP])
   i, count, users = getEntityArgument(users)
   for user in users:
     i += 1
@@ -22229,6 +22300,8 @@ def copyUserPeopleOtherContacts(users):
       except (GAPI.notFound, GAPI.internalError):
         entityActionFailedWarning([entityType, user, peopleEntityType, resourceName], Msg.DOES_NOT_EXIST, j, jcount)
         continue
+      except GAPI.permissionDenied as e:
+        ClientAPIAccessDeniedExit(str(e))
       except (GAPI.serviceNotAvailable, GAPI.forbidden):
         ClientAPIAccessDeniedExit()
     Ind.Decrement()
@@ -22343,7 +22416,9 @@ def processUserPeopleOtherContacts(users):
       except (GAPI.notFound, GAPI.internalError):
         entityActionFailedWarning([entityType, user, peopleEntityType, resourceName], Msg.DOES_NOT_EXIST, j, jcount)
         continue
-      except (GAPI.serviceNotAvailable, GAPI.forbidden, GAPI.permissionDenied):
+      except GAPI.permissionDenied as e:
+        ClientAPIAccessDeniedExit(str(e))
+      except (GAPI.serviceNotAvailable, GAPI.forbidden):
         ClientAPIAccessDeniedExit()
     Ind.Decrement()
 
@@ -22460,6 +22535,8 @@ def _printShowPeople(source):
                                pageSize=GC.Values[GC.PEOPLE_MAX_RESULTS],
                                sources=sources, mergeSources=mergeSources,
                                readMask=fields, fields='nextPageToken,people', **kwargs)
+  except (GAPI.permissionDenied, GAPI.failedPrecondition) as e:
+    ClientAPIAccessDeniedExit(str(e))
   except (GAPI.serviceNotAvailable, GAPI.forbidden):
     ClientAPIAccessDeniedExit()
   if not countsOnly:
@@ -22497,14 +22574,14 @@ def doInfoDomainPeopleContacts():
 #	[countsonly]
 #	[allfields|(fields <PeopleFieldNameList>)] [showmetadata]
 #	[formatjson]
-# gam print peoplecontacts [todrive <ToDriveAttribute>*]
+# gam print domaincontacts|peoplecontacts [todrive <ToDriveAttribute>*]
 #	[sources <PeopleSourceName>]
 #	[query <String>]
 #	[mergesources <PeopleMergeSourceName>]
 #	[countsonly]
 #	[allfields|(fields <PeopleFieldNameList>)] [showmetadata]
 #	[formatjson [quotechar <Character>]]
-# gam show peoplecontacts
+# gam show domaincontacts|peoplecontacts
 #	[sources <PeopleSourceName>]
 #	[query <String>]
 #	[mergesources <PeopleMergeSourceName>]
@@ -22580,6 +22657,8 @@ def printShowUserPeopleProfiles(users):
     except GAPI.notFound:
       entityUnknownWarning(Ent.PEOPLE_PROFILE, user, i, count)
       continue
+    except (GAPI.permissionDenied, GAPI.failedPrecondition) as e:
+      ClientAPIAccessDeniedExit(str(e))
     except (GAPI.serviceNotAvailable, GAPI.forbidden):
       ClientAPIAccessDeniedExit()
     if not csvPF:
@@ -22734,6 +22813,8 @@ def _processPeopleContactPhotos(users, function):
         entityDoesNotHaveItemWarning([entityType, user, peopleEntityType, resourceName, Ent.PHOTO, filename], j, jcount)
       except (GAPI.invalidArgument, OSError, IOError) as e:
         entityActionFailedWarning([entityType, user, peopleEntityType, resourceName, Ent.PHOTO, filename], str(e), j, jcount)
+      except (GAPI.permissionDenied, GAPI.failedPrecondition) as e:
+        ClientAPIAccessDeniedExit(str(e))
       except (GAPI.serviceNotAvailable, GAPI.forbidden):
         ClientAPIAccessDeniedExit()
         break
@@ -22808,7 +22889,7 @@ def createUserPeopleContactGroup(users):
         if addCSVData:
           row.update(addCSVData)
         csvPF.WriteRow(row)
-    except GAPI.forbidden:
+    except (GAPI.forbidden, GAPI.permissionDenied):
       userPeopleServiceNotEnabledWarning(user, i, count)
     except GAPI.serviceNotAvailable:
       entityUnknownWarning(entityType, user, i, count)
@@ -22862,7 +22943,7 @@ def updateUserPeopleContactGroup(users):
         entityActionPerformed([entityType, user, Ent.CONTACT_GROUP, contactGroup], j, jcount)
       except (GAPI.notFound, GAPI.internalError) as e:
         entityActionFailedWarning([entityType, user, Ent.CONTACT_GROUP, contactGroup], str(e), j, jcount)
-      except GAPI.forbidden:
+      except (GAPI.forbidden, GAPI.permissionDenied):
         userPeopleServiceNotEnabledWarning(user, i, count)
         break
       except GAPI.serviceNotAvailable:
@@ -22907,7 +22988,7 @@ def deleteUserPeopleContactGroups(users):
         entityActionPerformed([entityType, user, Ent.CONTACT_GROUP, contactGroup], j, jcount)
       except GAPI.notFound as e:
         entityActionFailedWarning([entityType, user, Ent.CONTACT_GROUP, contactGroup], str(e), j, jcount)
-      except GAPI.forbidden:
+      except (GAPI.forbidden, GAPI.permissionDenied):
         userPeopleServiceNotEnabledWarning(user, i, count)
         break
       except GAPI.serviceNotAvailable:
@@ -23008,7 +23089,7 @@ def infoUserPeopleContactGroups(users):
         _showContactGroup(entityType, user, Ent.CONTACT_GROUP, group, j, jcount, FJQC)
       except GAPI.notFound as e:
         entityActionFailedWarning([entityType, user, Ent.CONTACT_GROUP, contactGroup], str(e), j, jcount)
-      except GAPI.forbidden:
+      except (GAPI.forbidden, GAPI.permissionDenied):
         userPeopleServiceNotEnabledWarning(user, i, count)
         break
       except GAPI.serviceNotAvailable:
@@ -23057,6 +23138,8 @@ def printShowUserPeopleContactGroups(users):
                                  throwReasons=GAPI.PEOPLE_ACCESS_THROW_REASONS,
                                  pageSize=GC.Values[GC.PEOPLE_MAX_RESULTS],
                                  groupFields=fields, fields='nextPageToken,contactGroups')
+    except GAPI.permissionDenied as e:
+      ClientAPIAccessDeniedExit(str(e))
     except (GAPI.serviceNotAvailable, GAPI.forbidden):
       ClientAPIAccessDeniedExit()
     _printPersonEntityList(Ent.PEOPLE_CONTACT_GROUP, entityList, entityType, user, i, count, csvPF, FJQC, parameters, None)
@@ -24127,7 +24210,8 @@ def substituteQueryTimes(queries, queryTimes):
     for i, query in enumerate(queries):
       if query is not None:
         for queryTimeName, queryTimeValue in iter(queryTimes.items()):
-          queries[i] = query.replace(f'#{queryTimeName}#', queryTimeValue)
+          query = query.replace(f'#{queryTimeName}#', queryTimeValue)
+        queries[i] = query
 
 # Get CrOS devices from gam.cfg print_cros_ous and print_cros_ous_and_children
 def getCfgCrOSEntities():
@@ -24735,7 +24819,7 @@ def doPrintCrOSActivity(entityList=None):
   else:
     sortRows = True
     jcount = len(entityList)
-    fields = ','.join(set(fieldsList))
+    fields = getFieldsFromFieldsList(fieldsList)
     svcargs = dict([('customerId', GC.Values[GC.CUSTOMER_ID]), ('deviceId', None), ('projection', projection), ('fields', fields)]+GM.Globals[GM.EXTRA_ARGS_LIST])
     method = getattr(cd.chromeosdevices(), 'get')
     dbatch = cd.new_batch_http_request(callback=_callbackPrintCrOS)
@@ -25025,7 +25109,7 @@ def _showBrowser(browser, FJQC, i=0, count=0):
     return
   printEntity([Ent.CHROME_BROWSER, browser['deviceId']], i, count)
   Ind.Increment()
-  showJSON(None, browser, timeObjects=BROWSER_TIME_OBJECTS)
+  showJSON(None, browser, timeObjects=BROWSER_TIME_OBJECTS, dictObjectsKey={'machinePolicies': 'name'})
   Ind.Decrement()
 
 BROWSER_FIELDS_CHOICE_MAP = {
@@ -25065,11 +25149,13 @@ BROWSER_FIELDS_CHOICE_MAP = {
   'user': 'annotatedUser',
   'virtualdeviceid': 'virtualDeviceId',
   }
-BROWSER_ANNOTATED_FIELDS_LIST = ['annotatedAssetId', 'annotatedLocation', 'annotatedNotes', 'annotatedUser']
+BROWSER_ANNOTATED_FIELDS_LIST = ['annotatedAssetId', 'annotatedLocation', 'annotatedNotes', 'annotatedUser', 'deviceId']
 BROWSER_FULL_ACCESS_FIELDS = {'browsers', 'lastDeviceUsers', 'lastStatusReportTime', 'machinePolicies'}
 
 # gam info browser <DeviceID>
-#	[basic|full|annotated] <BrowserFieldName>* [fields <BrowserFieldNameList>]
+#	(basic|full|annotated |
+#	 (<BrowserFieldName>* [fields <BrowserFieldNameList>]) |
+#	 (rawfields <BrowserFieldNameList>))
 #	[formatjson]
 def doInfoBrowsers():
   cbcm = buildGAPIObject(API.CBCM)
@@ -25077,6 +25163,7 @@ def doInfoBrowsers():
   deviceId = getString(Cmd.OB_DEVICE_ID)
   projection = 'BASIC'
   fieldsList = []
+  rawFields = None
   FJQC = FormatJSONQuoteChar()
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
@@ -25088,16 +25175,21 @@ def doInfoBrowsers():
       fieldsList = []
     elif getFieldsList(myarg, BROWSER_FIELDS_CHOICE_MAP, fieldsList, initialField='deviceId'):
       pass
+    elif myarg == 'rawfields':
+      projection = 'FULL'
+      rawFields = _getRawFields('deviceId')
     else:
       FJQC.GetFormatJSON(myarg)
   if projection == 'BASIC' and set(fieldsList).intersection(BROWSER_FULL_ACCESS_FIELDS):
     projection = 'FULL'
-  fields = ','.join(set(fieldsList))
+  fields = getFieldsFromFieldsList(fieldsList) if not rawFields else rawFields
   try:
     browser = callGAPI(cbcm.chromebrowsers(), 'get',
-                       throwReasons=[GAPI.BAD_REQUEST, GAPI.RESOURCE_NOT_FOUND, GAPI.FORBIDDEN],
+                       throwReasons=[GAPI.BAD_REQUEST, GAPI.RESOURCE_NOT_FOUND, GAPI.INVALID_ARGUMENT, GAPI.FORBIDDEN],
                        customer=customerId, deviceId=deviceId, projection=projection, fields=fields)
     _showBrowser(browser, FJQC)
+  except GAPI.invalidArgument as e:
+    entityActionFailedWarning([Ent.CHROME_BROWSER, deviceId], str(e))
   except (GAPI.badRequest, GAPI.resourceNotFound, GAPI.forbidden):
     checkEntityAFDNEorAccessErrorExit(None, Ent.CHROME_BROWSER, deviceId)
 
@@ -25298,7 +25390,7 @@ def doInfoChromeProfile():
       pass
     else:
       FJQC.GetFormatJSON(myarg)
-  fields = ','.join(set(fieldsList))
+  fields = getFieldsFromFieldsList(fieldsList)
   try:
     profile = callGAPI(cm.customers().profiles(), 'get',
                        throwReasons=[GAPI.INVALID_ARGUMENT, GAPI.NOT_FOUND, GAPI.PERMISSION_DENIED],
@@ -25430,13 +25522,19 @@ BROWSER_ORDERBY_CHOICE_MAP = {
 #	([ou|org|orgunit|browserou <OrgUnitPath>] [(query <QueryBrowser)|(queries <QueryBrowserList>))|(select <BrowserEntity>))
 #	[querytime<String> <Time>]
 #	[orderby <BrowserOrderByFieldName> [ascending|descending]]
-#	[basic|full|allfields|annotated] <BrowserFieldName>* [fields <BrowserFieldNameList>]
+#	(basic|full|annotated |
+#	 (<BrowserFieldName>* [fields <BrowserFieldNameList>]) |
+#	 (rawfields <BrowserFieldNameList>))
+#	(<BrowserFieldName>* [fields <BrowserFieldNameList>]|(rawfields <BrowserFieldNameList>)
 #	[formatjson]
 # gam print browsers [todrive <ToDriveAttribute>*]
 #	([ou|org|orgunit|browserou <OrgUnitPath>] [(query <QueryBrowser)|(queries <QueryBrowserList>))|(select <BrowserEntity>))
 #	[querytime<String> <Time>]
 #	[orderby <BrowserOrderByFieldName> [ascending|descending]]
-#	[basic|full|allfields|annotated] <BrowserFieldName>* [fields <BrowserFieldNameList>]
+#	(basic|full|annotated |
+#	 (<BrowserFieldName>* [fields <BrowserFieldNameList>]) |
+#	 (rawfields <BrowserFieldNameList>))
+#	(<BrowserFieldName>* [fields <BrowserFieldNameList>]|(rawfields <BrowserFieldNameList>)
 #	[sortheaders] [formatjson [quotechar <Character>]]
 def doPrintShowBrowsers():
   def _printBrowser(browser):
@@ -25453,6 +25551,7 @@ def doPrintShowBrowsers():
   csvPF = CSVPrintFile(['deviceId']) if Act.csvFormat() else None
   FJQC = FormatJSONQuoteChar(csvPF)
   fieldsList = []
+  rawFields = None
   projection = 'BASIC'
   orderBy = 'id'
   sortOrder = 'ASCENDING'
@@ -25491,22 +25590,25 @@ def doPrintShowBrowsers():
       sortHeaders = True
     elif getFieldsList(myarg, BROWSER_FIELDS_CHOICE_MAP, fieldsList, initialField='deviceId'):
       pass
+    elif myarg == 'rawfields':
+      projection = 'FULL'
+      rawFields = _getRawFields('deviceId')
     else:
       FJQC.GetFormatJSONQuoteChar(myarg, True)
   if projection == 'BASIC' and set(fieldsList).intersection(BROWSER_FULL_ACCESS_FIELDS):
     projection = 'FULL'
-  fields = getItemFieldsFromFieldsList('browsers', fieldsList)
   if FJQC.formatJSON:
     sortHeaders = False
   substituteQueryTimes(queries, queryTimes)
   if entityList is None:
+    fields = getItemFieldsFromFieldsList('browsers', fieldsList) if not rawFields else f'nextPageToken,browsers({rawFields})'
     for query in queries:
       printGettingAllAccountEntities(Ent.CHROME_BROWSER, query)
       pageMessage = getPageMessage()
       try:
         feed = yieldGAPIpages(cbcm.chromebrowsers(), 'list', 'browsers',
                               pageMessage=pageMessage, messageAttribute='deviceId',
-                              throwReasons=[GAPI.INVALID_INPUT, GAPI.BAD_REQUEST, GAPI.INVALID_ORGUNIT, GAPI.FORBIDDEN],
+                              throwReasons=[GAPI.INVALID_INPUT, GAPI.BAD_REQUEST, GAPI.INVALID_ARGUMENT, GAPI.INVALID_ORGUNIT, GAPI.FORBIDDEN],
                               retryReasons=GAPI.SERVICE_NOT_AVAILABLE_RETRY_REASONS,
                               customer=customerId, orgUnitPath=orgUnitPath, query=query, projection=projection,
                               orderBy=orderBy, sortOrder=sortOrder, fields=fields)
@@ -25530,7 +25632,7 @@ def doPrintShowBrowsers():
         else:
           entityActionFailedWarning([Ent.CHROME_BROWSER, None], str(e))
         return
-      except (GAPI.invalidOrgunit, GAPI.forbidden) as e:
+      except (GAPI.invalidArgument, GAPI.invalidOrgunit, GAPI.forbidden) as e:
         entityActionFailedWarning([Ent.CHROME_BROWSER, None], str(e))
         return
       except (GAPI.badRequest, GAPI.resourceNotFound):
@@ -25538,15 +25640,17 @@ def doPrintShowBrowsers():
   else:
     sortRows = True
     jcount = len(entityList)
-    fields = getFieldsFromFieldsList(fieldsList)
+    fields = getFieldsFromFieldsList(fieldsList) if not rawFields else rawFields
     j = 0
     for deviceId in entityList:
       j += 1
       try:
         browser = callGAPI(cbcm.chromebrowsers(), 'get',
-                           throwReasons=[GAPI.BAD_REQUEST, GAPI.RESOURCE_NOT_FOUND, GAPI.FORBIDDEN],
+                           throwReasons=[GAPI.BAD_REQUEST, GAPI.RESOURCE_NOT_FOUND, GAPI.INVALID_ARGUMENT, GAPI.FORBIDDEN],
                            customer=customerId, deviceId=deviceId, projection=projection, fields=fields)
         _printBrowser(browser)
+      except GAPI.invalidArgument as e:
+        entityActionFailedWarning([Ent.CHROME_BROWSER, deviceId], str(e))
       except (GAPI.badRequest, GAPI.resourceNotFound, GAPI.forbidden):
         checkEntityAFDNEorAccessErrorExit(None, Ent.CHROME_BROWSER, deviceId)
   if csvPF:
@@ -27393,6 +27497,8 @@ def printShowChatEvents(users):
     csvPF.writeCSVfile('Chat Events')
 
 def buildMeetServiceObject(api=API.MEET, user=None, i=0, count=0, entityTypeList=None):
+  if GC.Values[GC.MEET_V2_BETA]:
+    api = API.MEET_BETA
   user, meet = buildGAPIServiceObject(api, user, i, count)
   kvList = [Ent.USER, user]
   if entityTypeList is not None:
@@ -27416,7 +27522,10 @@ MEET_SPACE_OPTIONS_MAP = {
   'reactionrestriction': 'reactionRestriction',
   'presentrestriction': 'presentRestriction',
   'defaultjoinasviewer': 'defaultJoinAsViewerType',
-  'firstjoiner': 'firstJoinerType'
+  'firstjoiner': 'firstJoinerType',
+  'autorecording': 'recordingConfig',
+  'autosmartnotes': 'smartNotesConfig',
+  'autotranscription': 'transcriptionConfig',
   }
 
 MEET_SPACE_ACCESSTYPE_CHOICES = {'open', 'trusted', 'restricted'}
@@ -27430,9 +27539,15 @@ MEET_SPACE_RESTRICTIONS_CHOICES_MAP = {
   'norestriction': 'NO_RESTRICTION'
   }
 
-MEET_SPACE_FIRSTJOINERTYPE_CHOICES_MAP = {
-  'hostsonly': 'HOSTS_ONLY',
-  'anyone': 'ANYONE'
+#MEET_SPACE_FIRSTJOINERTYPE_CHOICES_MAP = {
+#  'hostsonly': 'HOSTS_ONLY',
+#  'anyone': 'ANYONE'
+#  }
+
+MEET_SPACE_ARTIFACT_SUB_OPTIONS = {
+  'recordingConfig': 'autoRecordingGeneration',
+  'smartNotesConfig': 'autoSmartNotesGeneration',
+  'transcriptionConfig': 'autoTranscriptionGeneration'
   }
 
 #	[accesstype open|trusted|restricted]
@@ -27443,7 +27558,10 @@ MEET_SPACE_FIRSTJOINERTYPE_CHOICES_MAP = {
 #	[presentrestriction hostsonly|norestriction]
 #	[defaultjoinasviewer <Boolean>]
 #	[firstjoiner hostsonly|anyone]
-def _getMeetSpaceParameters(myarg, body, updateMask):
+#	[autorecording <Boolean>]
+#	[autosmartnotes <Boolean>]
+#	[autotranscription <Boolean>]
+def _getMeetSpaceParameters(myarg, body):
   option = MEET_SPACE_OPTIONS_MAP.get(myarg, None)
   if option is None:
     return False
@@ -27453,15 +27571,17 @@ def _getMeetSpaceParameters(myarg, body, updateMask):
     body['config'][option] = getChoice(MEET_SPACE_ENTRYPOINTACCESS_CHOICES_MAP, mapChoice=True)
   elif option == 'moderation':
     body['config'][option] = 'ON' if getBoolean() else 'OFF'
-  elif option in {'chatrestriction', 'reactionrestriction', 'presentrestriction'}:
-    body['config'].setdefault('moderationRestictions', {})
+  elif option in {'chatRestriction', 'reactionRestriction', 'presentRestriction'}:
+    body['config'].setdefault('moderationRestrictions', {})
     body['config']['moderationRestrictions'][option] = getChoice(MEET_SPACE_RESTRICTIONS_CHOICES_MAP, mapChoice=True)
-    option = f'moderationRestrictions.{option}'
   elif option == 'defaultJoinAsViewerType':
     body['config'][option] = 'ON' if getBoolean() else 'OFF'
-  elif option == 'firstJoinerType':
-    body['config'][option] = getChoice(MEET_SPACE_FIRSTJOINERTYPE_CHOICES_MAP, mapChoice=True)
-  updateMask.append(f'config.{option}')
+#  elif option == 'firstJoinerType':
+#    body['config'][option] = getChoice(MEET_SPACE_FIRSTJOINERTYPE_CHOICES_MAP, mapChoice=True)
+  elif option in {'recordingConfig', 'transcriptionConfig', 'smartNotesConfig'}:
+    body['config'].setdefault('artifactConfig', {})
+    body['config']['artifactConfig'].setdefault(option, {})
+    body['config']['artifactConfig'][option][MEET_SPACE_ARTIFACT_SUB_OPTIONS[option]] = 'ON' if getBoolean() else 'OFF'
   return True
 
 # gam <UserTypeEntity> create meetspace
@@ -27476,10 +27596,9 @@ def createMeetSpace(users):
 #                     'firstJoinerType': 'ANYONE',
                      }}
   returnIdOnly = False
-  updateMask = []
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
-    if _getMeetSpaceParameters(myarg, body, updateMask):
+    if _getMeetSpaceParameters(myarg, body):
       pass
     elif myarg == 'returnidonly':
       returnIdOnly = True
@@ -27514,12 +27633,11 @@ def updateMeetSpace(users):
   FJQC = FormatJSONQuoteChar()
   name = None
   body = {'config': {}}
-  updateMask = []
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
     if (myarg == 'space' or myarg.startswith('spaces/') or myarg.startswith('space/')):
       name = getSpaceName(myarg)
-    elif _getMeetSpaceParameters(myarg, body, updateMask):
+    elif _getMeetSpaceParameters(myarg, body):
       pass
     else:
       FJQC.GetFormatJSON(myarg)
@@ -27534,7 +27652,7 @@ def updateMeetSpace(users):
     try:
       space = callGAPI(meet.spaces(), 'patch',
                        throwReasons=[GAPI.NOT_FOUND, GAPI.INVALID_ARGUMENT, GAPI.PERMISSION_DENIED],
-                       name=name, updateMask=','.join(updateMask), body=body)
+                       name=name, updateMask='', body=body)
       if not FJQC.formatJSON:
         entityActionPerformed(kvList, i, count)
       Ind.Increment()
@@ -29140,6 +29258,7 @@ DEVICE_FIELDS_CHOICE_MAP = {
   'releaseversion': 'releaseVersion',
   'securitypatchtime': 'securityPatchTime',
   'serialnumber': 'serialNumber',
+  'unifieddeviceid': 'unifiedDeviceId',
   'wifimacaddresses': 'wifiMacAddresses'
   }
 
@@ -31683,6 +31802,8 @@ def doCreateGroup(ciGroupsAPI=False):
                                                       'query': getString(Cmd.OB_QUERY)})
     elif ciGroupsAPI and myarg == 'makeowner':
       initialGroupConfig = 'WITH_INITIAL_OWNER'
+    elif ciGroupsAPI and myarg in {'security', 'makesecuritygroup'}:
+      body['labels'][CIGROUP_SECURITY_LABEL] = ''
     elif myarg == 'verifynotinvitable':
       verifyNotInvitable = True
     else:
@@ -31910,7 +32031,7 @@ def doUpdateGroups():
                                        GAPI.INVALID_MEMBER: Msg.INVALID_MEMBER,
                                        GAPI.CYCLIC_MEMBERSHIPS_NOT_ALLOWED: Msg.WOULD_MAKE_MEMBERSHIP_CYCLE}
 
-  def _callbackAddGroupMembers(request_id, response, exception):
+  def _callbackAddGroupMembers(request_id, _, exception):
     ri = request_id.splitlines()
     if exception is None:
       _showSuccess(ri[RI_ENTITY], ri[RI_ITEM], ri[RI_ROLE], ri[RI_OPTION], int(ri[RI_J]), int(ri[RI_JCOUNT]))
@@ -31999,7 +32120,7 @@ def doUpdateGroups():
                                           GAPI.CONDITION_NOT_MET: f'{Msg.NOT_A} {Ent.Singular(Ent.MEMBER)}',
                                           GAPI.INVALID_MEMBER: Msg.DOES_NOT_EXIST}
 
-  def _callbackRemoveGroupMembers(request_id, response, exception):
+  def _callbackRemoveGroupMembers(request_id, _, exception):
     ri = request_id.splitlines()
     if exception is None:
       _showSuccess(ri[RI_ENTITY], ri[RI_ITEM], ri[RI_ROLE], DELIVERY_SETTINGS_UNDEFINED, int(ri[RI_J]), int(ri[RI_JCOUNT]))
@@ -32098,7 +32219,7 @@ def doUpdateGroups():
     except (GAPI.invalidMember, GAPI.resourceNotFound, GAPI.serviceNotAvailable) as e:
       _showFailure(group, member, role, str(e), j, jcount)
 
-  def _callbackUpdateGroupMembers(request_id, response, exception):
+  def _callbackUpdateGroupMembers(request_id, _, exception):
     ri = request_id.splitlines()
     if exception is None:
       _showSuccess(ri[RI_ENTITY], ri[RI_ITEM], ri[RI_ROLE], ri[RI_OPTION], int(ri[RI_J]), int(ri[RI_JCOUNT]))
@@ -33335,6 +33456,7 @@ PRINT_GROUPS_JSON_TITLES = ['email', 'JSON']
 
 # gam print groups [todrive <ToDriveAttribute>*]
 #	[([domain|domains <DomainNameEntity>] ([member|showownedby <EmailItem>]|[(query <QueryGroup>)|(queries <QueryUserList>)]))|
+#	 (group|group_ns|group_susp <GroupItem>)|
 #	 (select <GroupEntity>)]
 #	[emailmatchpattern [not] <RegularExpression>] [namematchpattern [not] <RegularExpression>]
 #	[descriptionmatchpattern [not] <RegularExpression>] (matchsetting [not] <GroupAttribute>)*
@@ -33547,6 +33669,12 @@ def doPrintGroups():
       pass
     elif getGroupMatchPatterns(myarg, matchPatterns, False):
       pass
+    elif myarg in {'group', 'groupns', 'groupsusp'}:
+      entitySelection = [getString(Cmd.OB_EMAIL_ADDRESS)]
+      if myarg == 'groupns':
+        isSuspended = False
+      elif myarg == 'groupsusp':
+        isSuspended = True
     elif myarg == 'select':
       entitySelection = getEntityList(Cmd.OB_GROUP_ENTITY)
     elif myarg in SUSPENDED_ARGUMENTS:
@@ -33871,6 +33999,8 @@ def infoGroupMembers(entityList, ciGroupsAPI=False):
           printKeyValueList(['type', result['type']])
           for field in ['createTime', 'updateTime']:
             printKeyValueList([field, formatLocalTime(result[field])])
+          if 'deliverySetting' in result:
+            printKeyValueList(['deliverySetting', result['deliverySetting']])
           Ind.Decrement()
         except (GAPI.groupNotFound, GAPI.domainNotFound, GAPI.domainCannotUseApis, GAPI.invalid, GAPI.forbidden) as e:
           entityActionFailedWarning([entityType, groupKey], str(e), j, jcount)
@@ -34057,7 +34187,7 @@ def doPrintGroupMembers():
           for name in info['names']:
             if name['metadata']['source']['type'] == sourceType:
               return name['displayName']
-    except (GAPI.notFound, GAPI.serviceNotAvailable, GAPI.forbidden):
+    except (GAPI.notFound, GAPI.serviceNotAvailable, GAPI.forbidden, GAPI.permissionDenied, GAPI.failedPrecondition):
       pass
     return unknownName
 
@@ -34114,7 +34244,7 @@ def doPrintGroupMembers():
       pass
     elif getMemberMatchOptions(myarg, memberOptions):
       pass
-    elif csvPF.GetFieldsListTitles(myarg, GROUPMEMBERS_FIELDS_CHOICE_MAP, fieldsList):
+    elif csvPF.GetFieldsListTitles(myarg, GROUPMEMBERS_FIELDS_CHOICE_MAP, fieldsList, initialField='email'):
       pass
     elif myarg == 'membernames':
       memberOptions[MEMBEROPTION_MEMBERNAMES] = True
@@ -34559,8 +34689,11 @@ def doPrintShowGroupTree():
   if csvPF:
     csvPF.writeCSVfile('Group Tree')
 
-# gam create cigroup <EmailAddress> [copyfrom <GroupItem>] <GroupAttribute>
-#	[makeowner] [alias|aliases <CIGroupAliasList>] [dynamic <QueryDynamicGroup>]
+# gam create cigroup <EmailAddress>
+#	[copyfrom <GroupItem>] <GroupAttribute>
+#	[makeowner] [alias|aliases <CIGroupAliasList>]
+#	[security|makesecuritygroup]
+#	[dynamic <QueryDynamicGroup>]
 def doCreateCIGroup():
   doCreateGroup(ciGroupsAPI=True)
 
@@ -35601,10 +35734,16 @@ def _showPolicies(policies, FJQC, add_warnings, no_appnames,
       _showPolicy(policy, FJQC, i, count)
   Ind.Decrement()
 
+def _checkPoliciesWithDASA():
+  if GC.Values[GC.ENABLE_DASA]:
+    systemErrorExit(USAGE_ERROR_RC,
+                    Msg.COMMAND_NOT_COMPATIBLE_WITH_ENABLE_DASA.format(Act.ToPerform().lower(), Cmd.ARG_CIPOLICIES))
+
 # gam info policies <CIPolicyNameEntity>
 #	[nowarnings] [noappnames]
 #	[formatjson]
 def doInfoCIPolicies():
+  _checkPoliciesWithDASA()
   groups_ci = buildGAPIObject(API.CLOUDIDENTITY_GROUPS)
   ci = buildGAPIObject(API.CLOUDIDENTITY_POLICY)
   cd = buildGAPIObject(API.DIRECTORY)
@@ -35663,6 +35802,7 @@ def doPrintShowCIPolicies():
                                                  ensure_ascii=False,
                                                  sort_keys=True)})
 
+  _checkPoliciesWithDASA()
   groups_ci = buildGAPIObject(API.CLOUDIDENTITY_GROUPS)
   ci = buildGAPIObject(API.CLOUDIDENTITY_POLICY)
   cd = buildGAPIObject(API.DIRECTORY)
@@ -36030,8 +36170,9 @@ def getCIGroupTransitiveMembers(ci, groupName, membersList, i, count):
   return True
 
 def getCIGroupMembers(ci, groupName, memberRoles, membersList, membersSet, i, count,
-                      memberOptions, memberDisplayOptions, level, typesSet):
-  printGettingAllEntityItemsForWhom(memberRoles if memberRoles else Ent.ROLE_MANAGER_MEMBER_OWNER, groupName, i, count)
+                      memberOptions, memberDisplayOptions, level, typesSet, groupEmail, kwargs):
+  nameToPrint = groupEmail if groupEmail else groupName
+  printGettingAllEntityItemsForWhom(memberRoles if memberRoles else Ent.ROLE_MANAGER_MEMBER_OWNER, nameToPrint, i, count)
   validRoles = _getCIRoleVerification(memberRoles)
   if memberOptions[MEMBEROPTION_INCLUDEDERIVEDMEMBERSHIP]:
     groupMembers = []
@@ -36046,12 +36187,11 @@ def getCIGroupMembers(ci, groupName, memberRoles, membersList, membersSet, i, co
     groupMembers = callGAPIpages(ci.groups().memberships(), 'list', 'memberships',
                                  pageMessage=getPageMessageForWhom(),
                                  throwReasons=GAPI.CIGROUP_LIST_THROW_REASONS, retryReasons=GAPI.CIGROUP_RETRY_REASONS,
-                                 parent=groupName, view='FULL',
-                                 fields='nextPageToken,memberships(*)', pageSize=GC.Values[GC.MEMBER_MAX_RESULTS])
+                                 parent=groupName, **kwargs)
   except (GAPI.resourceNotFound, GAPI.domainNotFound, GAPI.domainCannotUseApis,
           GAPI.forbidden, GAPI.badRequest, GAPI.invalid, GAPI.invalidArgument, GAPI.systemError,
           GAPI.permissionDenied, GAPI.serviceNotAvailable):
-    entityUnknownWarning(Ent.CLOUD_IDENTITY_GROUP, groupName, i, count)
+    entityUnknownWarning(Ent.CLOUD_IDENTITY_GROUP, nameToPrint, i, count)
     return
   checkCategory = memberDisplayOptions['showCategory']
   if not memberOptions[MEMBEROPTION_RECURSIVE]:
@@ -36085,7 +36225,7 @@ def getCIGroupMembers(ci, groupName, memberRoles, membersList, membersSet, i, co
             memberName not in membersSet):
           membersSet.add(memberName)
           member['level'] = level
-          member['subgroup'] = groupName
+          member['subgroup'] = nameToPrint
           membersList.append(member)
       else:
         if memberName not in membersSet:
@@ -36094,37 +36234,41 @@ def getCIGroupMembers(ci, groupName, memberRoles, membersList, membersSet, i, co
               checkCIMemberMatch(member, memberOptions) and
               (not checkCategory or _checkCIMemberCategory(member, memberDisplayOptions))):
             member['level'] = level
-            member['subgroup'] = groupName
+            member['subgroup'] = nameToPrint
             membersList.append(member)
           _, gname = member['name'].rsplit('/', 1)
-          groupMemberList.append(f'groups/{gname}')
+          groupMemberList.append((f'groups/{gname}', memberName))
     for member in groupMemberList:
-      getCIGroupMembers(ci, member, memberRoles, membersList, membersSet, i, count,
-                        memberOptions, memberDisplayOptions, level+1, typesSet)
+      getCIGroupMembers(ci, member[0], memberRoles, membersList, membersSet, i, count,
+                        memberOptions, memberDisplayOptions, level+1, typesSet, member[1], kwargs)
   else:
     for member in groupMembers:
       getCIGroupMemberRoleFixType(member)
+      memberName = member.get('preferredMemberKey', {}).get('id', '')
       if member['type'] != Ent.TYPE_GROUP:
         if (member['type'] in typesSet and
             checkCIMemberMatch(member, memberOptions) and
             _checkMemberRole(member, validRoles) and
             (not checkCategory or _checkCIMemberCategory(member, memberDisplayOptions))):
           member['level'] = level
-          member['subgroup'] = groupName
+          member['subgroup'] = nameToPrint
           membersList.append(member)
       else:
         if (member['type'] in typesSet and
             checkCIMemberMatch(member, memberOptions) and
             (not checkCategory or _checkCIMemberCategory(member, memberDisplayOptions))):
           member['level'] = level
-          member['subgroup'] = groupName
+          member['subgroup'] = nameToPrint
           membersList.append(member)
         _, gname = member['name'].rsplit('/', 1)
         getCIGroupMembers(ci, f'groups/{gname}', memberRoles, membersList, membersSet, i, count,
-                          memberOptions, memberDisplayOptions, level+1, typesSet)
+                          memberOptions, memberDisplayOptions, level+1, typesSet, memberName, kwargs)
 
 CIGROUPMEMBERS_FIELDS_CHOICE_MAP = {
   'createtime': 'createTime',
+  'delivery': 'deliverySetting',
+  'deliverysettings': 'deliverySetting',
+  'email': 'preferredMemberKey',
   'expiretime': 'expireTime',
   'id': 'name',
   'memberkey': 'preferredMemberKey',
@@ -36145,6 +36289,16 @@ CIGROUPMEMBERS_SORT_FIELDS = [
   ]
 CIGROUPMEMBERS_TIME_OBJECTS = {'createTime', 'updateTime', 'expireTime'}
 
+def _getCIListGroupMembersArgs(listView):
+  if listView == 'full':
+    return  {'view': 'FULL', 'pageSize': GC.Values[GC.MEMBER_MAX_RESULTS_CI_FULL],
+             'fields': 'nextPageToken,memberships(*)'}
+  if listView == 'basic':
+    return  {'view': 'FULL', 'pageSize': GC.Values[GC.MEMBER_MAX_RESULTS_CI_FULL],
+             'fields': 'nextPageToken,memberships(name,preferredMemberKey,roles,type)'}
+  return {'view': 'BASIC', 'pageSize': GC.Values[GC.MEMBER_MAX_RESULTS_CI_BASIC],
+             'fields': 'nextPageToken,memberships(*)'}
+
 # gam print cigroup-members [todrive <ToDriveAttribute>*]
 #	[(cimember|ciowner <UserItem>)|(cigroup <GroupItem>)|(select <GroupEntity>)]
 #	[showownedby <UserItem>]
@@ -36154,6 +36308,7 @@ CIGROUPMEMBERS_TIME_OBJECTS = {'createTime', 'updateTime', 'expireTime'}
 #	[types <CIGroupMemberTypeList>]
 #	[memberemaildisplaypattern|memberemailskippattern <RegularExpression>]
 #	<CIGroupMembersFieldName>* [fields <CIGroupMembersFieldNameList>]
+#	[minimal|basic|full]
 #	[(recursive [noduplicates])|includederivedmembership] [nogroupeemail]
 #	[formatjson [quotechar <Character>]]
 def doPrintCIGroupMembers():
@@ -36171,6 +36326,7 @@ def doPrintCIGroupMembers():
   rolesSet = set()
   typesSet = set()
   matchPatterns = {}
+  listView = 'full'
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
     if myarg == 'todrive':
@@ -36199,7 +36355,7 @@ def doPrintCIGroupMembers():
       pass
     elif getMemberMatchOptions(myarg, memberOptions):
       pass
-    elif getFieldsList(myarg, CIGROUPMEMBERS_FIELDS_CHOICE_MAP, fieldsList):
+    elif getFieldsList(myarg, CIGROUPMEMBERS_FIELDS_CHOICE_MAP, fieldsList, initialField='preferredMemberKey'):
       pass
     elif myarg == 'noduplicates':
       memberOptions[MEMBEROPTION_NODUPLICATES] = True
@@ -36211,8 +36367,12 @@ def doPrintCIGroupMembers():
       memberOptions[MEMBEROPTION_RECURSIVE] = False
     elif myarg == 'nogroupemail':
       groupColumn = False
+    elif myarg in {'minimal', 'basic', 'full'}:
+      listView = myarg
     else:
       FJQC.GetFormatJSONQuoteChar(myarg, False)
+  if listView == 'minimal' and memberOptions[MEMBEROPTION_RECURSIVE]:
+    usageErrorExit(Msg.ARE_MUTUALLY_EXCLUSIVE.format('minimal', 'recursive'))
   if not typesSet:
     typesSet = {Ent.TYPE_USER} if memberOptions[MEMBEROPTION_RECURSIVE] else ALL_CIGROUP_MEMBER_TYPES
   fields = ','.join(set(groupFieldsLists['ci']))
@@ -36239,6 +36399,7 @@ def doPrintCIGroupMembers():
   if showOwnedBy:
     getRolesSet.add(Ent.ROLE_OWNER)
   getRoles = ','.join(sorted(getRolesSet))
+  kwargs = _getCIListGroupMembersArgs(listView)
   level = 0
   i = 0
   count = len(entityList)
@@ -36265,7 +36426,7 @@ def doPrintCIGroupMembers():
     membersList = []
     membersSet = set()
     getCIGroupMembers(ci, groupEntity['name'], getRoles, membersList, membersSet, i, count,
-                      memberOptions, memberDisplayOptions, level, typesSet)
+                      memberOptions, memberDisplayOptions, level, typesSet, groupEmail, kwargs)
     if showOwnedBy and not checkCIGroupShowOwnedBy(showOwnedBy, membersList):
       continue
     for member in membersList:
@@ -36283,6 +36444,8 @@ def doPrintCIGroupMembers():
         row['subgroup'] = member['subgroup']
       if memberDisplayOptions['showCategory']:
         row['category'] = member['category']
+      if listView == 'minimal':
+        dmember.pop('type', None)
       mapCIGroupMemberFieldNames(dmember)
       if not FJQC.formatJSON:
         csvPF.WriteRowTitles(flattenJSON(dmember, flattened=row, timeObjects=CIGROUPMEMBERS_TIME_OBJECTS))
@@ -36312,17 +36475,19 @@ def doPrintCIGroupMembers():
 #	[showownedby <UserItem>]
 #	[emailmatchpattern [not] <RegularExpression>] [namematchpattern [not] <RegularExpression>]
 #	[descriptionmatchpattern [not] <RegularExpression>]
-#	[roles <GroupRoleList>] [members] [managers] [owners] [depth <Number>]
+#	[roles <GroupRoleList>] [members] [managers] [owners]
 #	[internal] [internaldomains <DomainList>] [external]
 #	[types <CIGroupMemberTypeList>]
 #	[memberemaildisplaypattern|memberemailskippattern <RegularExpression>]
-#	[includederivedmembership]
+#	[minimal|basic|full]
+#	[(depth <Number>) | includederivedmembership]
 def doShowCIGroupMembers():
   def _roleOrder(key):
     return {Ent.ROLE_OWNER: 0, Ent.ROLE_MANAGER: 1, Ent.ROLE_MEMBER: 2}.get(key, 3)
 
   def _typeOrder(key):
-    return {Ent.TYPE_CUSTOMER: 0, Ent.TYPE_USER: 1, Ent.TYPE_GROUP: 2, Ent.TYPE_EXTERNAL: 3}.get(key, 4)
+    return {Ent.TYPE_CUSTOMER: 0, Ent.TYPE_USER: 1, Ent.TYPE_GROUP: 2,
+            Ent.TYPE_CBCM_BROWSER: 3, Ent.TYPE_OTHER: 4, Ent.TYPE_EXTERNAL: 5}.get(key, 6)
 
   def _showGroup(groupName, groupEmail, depth):
     if includeDerivedMembership:
@@ -36333,8 +36498,7 @@ def doShowCIGroupMembers():
       try:
         membersList = callGAPIpages(ci.groups().memberships(), 'list', 'memberships',
                                     throwReasons=GAPI.CIGROUP_LIST_THROW_REASONS, retryReasons=GAPI.CIGROUP_RETRY_REASONS,
-                                    parent=groupName, view='FULL',
-                                    fields='nextPageToken,memberships(*)', pageSize=GC.Values[GC.MEMBER_MAX_RESULTS])
+                                    parent=groupName, **kwargs)
         for member in membersList:
           getCIGroupMemberRoleFixType(member)
       except (GAPI.resourceNotFound, GAPI.domainNotFound, GAPI.domainCannotUseApis,
@@ -36355,7 +36519,10 @@ def doShowCIGroupMembers():
         if (_checkMemberRole(member, rolesSet) and
             member['type'] in typesSet and
             checkCIMemberMatch(member, memberOptions)):
-          memberDetails = f'{member.get("role", Ent.ROLE_MEMBER)}, {member["type"]}, {member["preferredMemberKey"]["id"]}'
+          if listView != 'minimal':
+            memberDetails = f'{member.get("role", Ent.ROLE_MEMBER)}, {member["type"]}, {member["preferredMemberKey"]["id"]}'
+          else:
+            memberDetails = f'{member.get("role", Ent.ROLE_MEMBER)}, {member["preferredMemberKey"]["id"]}'
           if checkCategory:
             memberDetails += f', {member["category"]}'
           for field in ['createTime', 'updateTime', 'expireTime']:
@@ -36380,6 +36547,7 @@ def doShowCIGroupMembers():
   matchPatterns = {}
   maxdepth = -1
   includeDerivedMembership = False
+  listView = 'full'
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
     if myarg == 'showownedby':
@@ -36410,6 +36578,8 @@ def doShowCIGroupMembers():
       maxdepth = getInteger(minVal=-1)
     elif myarg == 'includederivedmembership':
       includeDerivedMembership = True
+    elif myarg in {'minimal', 'basic', 'full'}:
+      listView = myarg
     else:
       unknownArgumentExit()
   if not rolesSet:
@@ -36419,6 +36589,7 @@ def doShowCIGroupMembers():
   checkCategory = memberDisplayOptions['showCategory']
   fields = ','.join(set(groupFieldsLists['ci']))
   entityList = getCIGroupMembersEntityList(ci, entityList, query, subTitle, matchPatterns, groupFieldsLists['ci'], None)
+  kwargs = _getCIListGroupMembersArgs(listView)
   i = 0
   count = len(entityList)
   for group in entityList:
@@ -37395,7 +37566,7 @@ def _doDeleteResourceCalendars(entityList):
                retryReasons=GAPI.SERVICE_NOT_AVAILABLE_RETRY_REASONS,
                customer=GC.Values[GC.CUSTOMER_ID], calendarResourceId=resourceId)
       entityActionPerformed([Ent.RESOURCE_CALENDAR, resourceId], i, count)
-    except GAPI.serviceNotAvailable  as e:
+    except GAPI.serviceNotAvailable as e:
       entityActionFailedWarning([Ent.RESOURCE_CALENDAR, resourceId], str(e), i, count)
     except (GAPI.badRequest, GAPI.resourceNotFound, GAPI.forbidden):
       checkEntityAFDNEorAccessErrorExit(cd, Ent.RESOURCE_CALENDAR, resourceId, i, count)
@@ -38767,6 +38938,22 @@ def _setEventRecurrenceTimeZone(cal, calId, body, parameters, i, count):
       body['end']['timeZone'] = timeZone
   return True
 
+def _getEventDaysOfWeek(event):
+  for attr in ['start', 'end']:
+    if attr in event:
+      if 'date' in event[attr]:
+        try:
+          dateTime = datetime.datetime.strptime(event[attr]['date'], YYYYMMDD_FORMAT)
+          event[attr]['dayOfWeek'] = calendarlib.day_abbr[dateTime.weekday()]
+        except ValueError:
+          pass
+      elif 'dateTime' in event[attr]:
+        try:
+          dateTime, _ = iso8601.parse_date(event[attr]['dateTime'])
+          event[attr]['dayOfWeek'] = calendarlib.day_abbr[dateTime.weekday()]
+        except (iso8601.ParseError, OverflowError):
+          pass
+
 def _createCalendarEvents(user, origCal, function, calIds, count, body, parameters):
   if parameters['attendees']:
     body['attendees'] = parameters.pop('attendees')
@@ -38895,7 +39082,8 @@ def _updateCalendarEvents(origUser, user, origCal, calIds, count, calendarEventE
         event = callGAPI(cal.events(), 'patch',
                          throwReasons=GAPI.CALENDAR_THROW_REASONS+[GAPI.NOT_FOUND, GAPI.DELETED, GAPI.FORBIDDEN,
                                                                    GAPI.INVALID, GAPI.REQUIRED, GAPI.TIME_RANGE_EMPTY, GAPI.EVENT_DURATION_EXCEEDS_LIMIT,
-                                                                   GAPI.REQUIRED_ACCESS_LEVEL, GAPI.CANNOT_CHANGE_ORGANIZER_OF_INSTANCE],
+                                                                   GAPI.REQUIRED_ACCESS_LEVEL, GAPI.CANNOT_CHANGE_ORGANIZER_OF_INSTANCE,
+                                                                   GAPI.MALFORMED_WORKING_LOCATION_EVENT],
                          calendarId=calId, eventId=eventId, conferenceDataVersion=1, sendUpdates=parameters['sendUpdates'], supportsAttachments=True,
                          body=body, fields=pfields)
         if parameters['csvPF'] is None:
@@ -38910,7 +39098,7 @@ def _updateCalendarEvents(origUser, user, origCal, calIds, count, calendarEventE
           break
         entityActionFailedWarning([Ent.CALENDAR, calId, Ent.EVENT, eventId], str(e), j, jcount)
       except (GAPI.forbidden, GAPI.invalid, GAPI.required, GAPI.timeRangeEmpty, GAPI.eventDurationExceedsLimit,
-              GAPI.requiredAccessLevel, GAPI.cannotChangeOrganizerOfInstance) as e:
+              GAPI.requiredAccessLevel, GAPI.cannotChangeOrganizerOfInstance, GAPI.malformedWorkingLocationEvent) as e:
         entityActionFailedWarning([Ent.CALENDAR, calId, Ent.EVENT, eventId], str(e), j, jcount)
       except GAPI.notACalendarUser:
         userCalServiceNotEnabledWarning(calId, i, count)
@@ -39114,10 +39302,12 @@ def _wipeCalendarEvents(user, origCal, calIds, count):
       continue
     try:
       callGAPI(cal.calendars(), 'clear',
-               throwReasons=GAPI.CALENDAR_THROW_REASONS+[GAPI.NOT_FOUND, GAPI.FORBIDDEN, GAPI.INVALID, GAPI.REQUIRED_ACCESS_LEVEL],
+               throwReasons=GAPI.CALENDAR_THROW_REASONS+[GAPI.NOT_FOUND, GAPI.FORBIDDEN, GAPI.INVALID,
+                                                         GAPI.REQUIRED_ACCESS_LEVEL, GAPI.SERVICE_NOT_AVAILABLE],
+               retryReasons=GAPI.SERVICE_NOT_AVAILABLE_RETRY_REASONS,
                calendarId=calId)
       entityActionPerformed([Ent.CALENDAR, calId], i, count)
-    except (GAPI.notFound, GAPI.forbidden, GAPI.invalid, GAPI.requiredAccessLevel) as e:
+    except (GAPI.notFound, GAPI.forbidden, GAPI.invalid, GAPI.requiredAccessLevel, GAPI.serviceNotAvailable) as e:
       entityActionFailedWarning([Ent.CALENDAR, calId], str(e), i, count)
     except GAPI.notACalendarUser:
       userCalServiceNotEnabledWarning(calId, i, count)
@@ -39399,6 +39589,8 @@ def _getCalendarInfoEventOptions(calendarEventEntity):
     myarg = getArgument()
     if myarg == 'fields':
       _getEventFields(fieldsList)
+    elif myarg == 'showdayofweek':
+      calendarEventEntity['showDayOfWeek'] = True
     else:
       FJQC.GetFormatJSON(myarg)
   _addEventEntitySelectFields(calendarEventEntity, fieldsList)
@@ -39422,6 +39614,8 @@ def _infoCalendarEvents(origUser, user, origCal, calIds, count, calendarEventEnt
                          throwReasons=GAPI.CALENDAR_THROW_REASONS+[GAPI.NOT_FOUND, GAPI.DELETED, GAPI.FORBIDDEN],
                          calendarId=calId, eventId=eventId, fields=fields)
         if calendarEventEntity['maxinstances'] == -1 or 'recurrence' not in event:
+          if calendarEventEntity['showDayOfWeek']:
+            _getEventDaysOfWeek(event)
           _showCalendarEvent(user, calId, Ent.EVENT, event, j, jcount, FJQC)
         else:
           instances = callGAPIpages(cal.events(), 'instances', 'items',
@@ -39435,6 +39629,8 @@ def _infoCalendarEvents(origUser, user, origCal, calIds, count, calendarEventEnt
           l = 0
           for instance in instances:
             l += 1
+            if calendarEventEntity['showDayOfWeek']:
+              _getEventDaysOfWeek(instance)
             _showCalendarEvent(user, calId, Ent.INSTANCE, instance, l, lcount, FJQC)
           Ind.Decrement()
       except (GAPI.notFound, GAPI.deleted) as e:
@@ -39487,22 +39683,6 @@ def _getCalendarPrintShowEventOptions(calendarEventEntity, entityType):
       csvPF.AddSortTitles(EVENT_PRINT_ORDER)
   _addEventEntitySelectFields(calendarEventEntity, fieldsList)
   return (csvPF, FJQC, fieldsList)
-
-def _getEventDaysOfWeek(event):
-  for attr in ['start', 'end']:
-    if attr in event:
-      if 'date' in event[attr]:
-        try:
-          dateTime = datetime.datetime.strptime(event[attr]['date'], YYYYMMDD_FORMAT)
-          event[attr]['dayOfWeek'] = calendarlib.day_abbr[dateTime.weekday()]
-        except ValueError:
-          pass
-      elif 'dateTime' in event[attr]:
-        try:
-          dateTime, _ = iso8601.parse_date(event[attr]['dateTime'])
-          event[attr]['dayOfWeek'] = calendarlib.day_abbr[dateTime.weekday()]
-        except (iso8601.ParseError, OverflowError):
-          pass
 
 # gam calendars <CalendarEntity> print events <EventEntity> <EventDisplayProperties>*
 #	[fields <EventFieldNameList>] [showdayofweek]
@@ -40217,20 +40397,20 @@ def convertExportNameToID(v, nameOrId, matterId, matterNameId):
   if cg:
     try:
       export = callGAPI(v.matters().exports(), 'get',
-                        throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                        throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                         matterId=matterId, exportId=cg.group(1))
       return (export['id'], export['name'], formatVaultNameId(export['id'], export['name']))
     except (GAPI.notFound, GAPI.badRequest):
       entityDoesNotHaveItemExit([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_EXPORT, nameOrId])
-    except GAPI.forbidden:
-      ClientAPIAccessDeniedExit()
+    except (GAPI.forbidden, GAPI.invalidArgument) as e:
+      ClientAPIAccessDeniedExit(str(e))
   nameOrIdlower = nameOrId.lower()
   try:
     exports = callGAPIpages(v.matters().exports(), 'list', 'exports',
-                            throwReasons=[GAPI.FORBIDDEN],
+                            throwReasons=[GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                             matterId=matterId, fields='exports(id,name),nextPageToken')
-  except GAPI.forbidden:
-    ClientAPIAccessDeniedExit()
+  except (GAPI.forbidden, GAPI.invalidArgument) as e:
+    ClientAPIAccessDeniedExit(str(e))
   for export in exports:
     if export['name'].lower() == nameOrIdlower:
       return (export['id'], export['name'], formatVaultNameId(export['id'], export['name']))
@@ -40241,20 +40421,20 @@ def convertHoldNameToID(v, nameOrId, matterId, matterNameId):
   if cg:
     try:
       hold = callGAPI(v.matters().holds(), 'get',
-                      throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                      throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                       matterId=matterId, holdId=cg.group(1))
       return (hold['holdId'], hold['name'], formatVaultNameId(hold['holdId'], hold['name']))
     except (GAPI.notFound, GAPI.badRequest):
       entityDoesNotHaveItemExit([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, nameOrId])
-    except GAPI.forbidden:
-      ClientAPIAccessDeniedExit()
+    except (GAPI.forbidden, GAPI.invalidArgument) as e:
+      ClientAPIAccessDeniedExit(str(e))
   nameOrIdlower = nameOrId.lower()
   try:
     holds = callGAPIpages(v.matters().holds(), 'list', 'holds',
-                          throwReasons=[GAPI.FORBIDDEN],
+                          throwReasons=[GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                           matterId=matterId, fields='holds(holdId,name),nextPageToken')
-  except GAPI.forbidden:
-    ClientAPIAccessDeniedExit()
+  except (GAPI.forbidden, GAPI.invalidArgument) as e:
+    ClientAPIAccessDeniedExit(str(e))
   for hold in holds:
     if hold['name'].lower() == nameOrIdlower:
       return (hold['holdId'], hold['name'], formatVaultNameId(hold['holdId'], hold['name']))
@@ -40265,17 +40445,17 @@ def convertMatterNameToID(v, nameOrId, state=None):
   if cg:
     try:
       matter = callGAPI(v.matters(), 'get',
-                        throwReasons=[GAPI.NOT_FOUND, GAPI.FORBIDDEN],
+                        throwReasons=[GAPI.NOT_FOUND, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                         matterId=cg.group(1), view='BASIC', fields='matterId,name,state')
       return (matter['matterId'], matter['name'], formatVaultNameId(matter['name'], matter['matterId']), matter['state'])
     except (GAPI.notFound, GAPI.forbidden):
       entityDoesNotExistExit(Ent.VAULT_MATTER, nameOrId)
   try:
     matters = callGAPIpages(v.matters(), 'list', 'matters',
-                            throwReasons=[GAPI.FORBIDDEN],
+                            throwReasons=[GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                             view='BASIC', state=state, fields='matters(matterId,name,state),nextPageToken')
-  except GAPI.forbidden:
-    ClientAPIAccessDeniedExit()
+  except (GAPI.forbidden, GAPI.invalidArgument) as e:
+    ClientAPIAccessDeniedExit(str(e))
   nameOrIdlower = nameOrId.lower()
   ids = []
   states = []
@@ -40296,20 +40476,20 @@ def convertQueryNameToID(v, nameOrId, matterId, matterNameId):
   if cg:
     try:
       query = callGAPI(v.matters().savedQueries(), 'get',
-                       throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                       throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                        matterId=matterId, savedQueryId=cg.group(1))
       return (query['savedQueryId'], query['displayName'], formatVaultNameId(query['savedQueryId'], query['displayName']))
     except (GAPI.notFound, GAPI.badRequest):
       entityDoesNotHaveItemExit([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_QUERY, nameOrId])
-    except GAPI.forbidden:
-      ClientAPIAccessDeniedExit()
+    except (GAPI.forbidden, GAPI.invalidArgument) as e:
+      ClientAPIAccessDeniedExit(str(e))
   nameOrIdlower = nameOrId.lower()
   try:
     queries = callGAPIpages(v.matters().savedQueries(), 'list', 'savedQueries',
-                            throwReasons=[GAPI.FORBIDDEN],
+                            throwReasons=[GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                             matterId=matterId, fields='savedQueries(savedQueryId,displayName),nextPageToken')
-  except GAPI.forbidden:
-    ClientAPIAccessDeniedExit()
+  except (GAPI.forbidden, GAPI.invalidArgument) as e:
+    ClientAPIAccessDeniedExit(str(e))
   for query in queries:
     if query['displayName'].lower() == nameOrIdlower:
       return (query['savedQueryId'], query['displayName'], formatVaultNameId(query['savedQueryId'], query['displayName']))
@@ -40323,9 +40503,9 @@ def warnMatterNotOpen(v, matter, matterNameId, j, jcount):
   if v is not None:
     try:
       matter['state'] = callGAPI(v.matters(), 'get',
-                                 throwReasons=[GAPI.NOT_FOUND, GAPI.FORBIDDEN],
+                                 throwReasons=[GAPI.NOT_FOUND, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                                  matterId=matter['matterId'], view='BASIC', fields='state')['state']
-    except (GAPI.notFound, GAPI.forbidden):
+    except (GAPI.notFound, GAPI.forbidden, GAPI.invalidArgument):
       matter['state'] = 'Unknown'
   else:
     setSysExitRC(DATA_NOT_AVALIABLE_RC)
@@ -40374,9 +40554,10 @@ VAULT_SEARCH_METHODS_MAP = {
 VAULT_CORPUS_ARGUMENT_MAP = {
   'calendar': 'CALENDAR',
   'drive': 'DRIVE',
-  'mail': 'MAIL',
+  'gemini': 'GEMINI',
   'groups': 'GROUPS',
   'hangoutschat': 'HANGOUTS_CHAT',
+  'mail': 'MAIL',
   'voice': 'VOICE',
   }
 VAULT_COUNTS_CORPUS_ARGUMENT_MAP = {
@@ -40403,14 +40584,21 @@ VAULT_EXPORT_FORMAT_MAP = {
   'ics': 'ICS',
   'mbox': 'MBOX',
   'pst': 'PST',
+  'xml': 'XML',
   }
 VAULT_CORPUS_EXPORT_FORMATS = {
   'CALENDAR': ['ICS', 'PST'],
   'DRIVE': [],
+  'GEMINI': ['XML'],
   'GROUPS': ['MBOX', 'PST'],
   'HANGOUTS_CHAT': ['MBOX', 'PST'],
   'MAIL': ['MBOX', 'PST'],
   'VOICE' : ['MBOX', 'PST'],
+  }
+VAULT_CSE_OPTION_MAP = {
+  'any': 'CLIENT_SIDE_ENCRYPTED_OPTION_ANY',
+  'encrypted': 'CLIENT_SIDE_ENCRYPTED_OPTION_ENCRYPTED',
+  'unencrypted': 'CLIENT_SIDE_ENCRYPTED_OPTION_UNENCRYPTED',
   }
 VAULT_EXPORT_REGION_MAP = {
   'any': 'ANY',
@@ -40420,16 +40608,18 @@ VAULT_EXPORT_REGION_MAP = {
 VAULT_CORPUS_OPTIONS_MAP = {
   'CALENDAR': 'calendarOptions',
   'DRIVE': 'driveOptions',
-  'MAIL': 'mailOptions',
+  'GEMINI': 'geminiOptions',
   'GROUPS': 'groupsOptions',
   'HANGOUTS_CHAT': 'hangoutsChatOptions',
+  'MAIL': 'mailOptions',
   'VOICE': 'voiceOptions',
   }
 VAULT_CORPUS_QUERY_MAP = {
   'CALENDAR': None,
   'DRIVE': 'driveQuery',
-  'MAIL': 'mailQuery',
+  'GEMINI': None,
   'GROUPS': 'groupsQuery',
+  'MAIL': 'mailQuery',
   'HANGOUTS_CHAT': 'hangoutsChatQuery',
   'VOICE': 'voiceQuery',
   }
@@ -40438,11 +40628,11 @@ VAULT_QUERY_ARGS = [
 # calendar
   'locationquery', 'peoplequery', 'minuswords', 'responsestatuses', 'caldendarversiondate',
 # drive
-  'driveversiondate', 'includeshareddrives', 'includeteamdrives',
+  'driveclientsideencryption', 'driveversiondate', 'includeshareddrives', 'includeteamdrives',
 # hangoutsChat
   'includerooms',
 # mail
-  'excludedrafts',
+  'mailclientsideencryption', 'excludedrafts',
 # voice
   'covereddata',
   ] + list(VAULT_SEARCH_METHODS_MAP.keys())
@@ -40499,12 +40689,16 @@ def _buildVaultQuery(myarg, query, corpusArgumentMap):
     query.setdefault('driveOptions', {})['versionDate'] = getTimeOrDeltaFromNow()
   elif myarg in {'includeshareddrives', 'includeteamdrives'}:
     query.setdefault('driveOptions', {})['includeSharedDrives'] = getBoolean()
+  elif myarg == 'driveclientsideencryption':
+    query.setdefault('driveOptions', {})['clientSideEncryptedOption'] = getChoice(VAULT_CSE_OPTION_MAP, mapChoice=True)
 # hangoutsChat
   elif myarg == 'includerooms':
     query['hangoutsChatOptions'] = {'includeRooms': getBoolean()}
 # mail
   elif myarg == 'excludedrafts':
     query['mailOptions'] = {'excludeDrafts': getBoolean()}
+  elif myarg == 'mailclientsideencryption':
+    query.setdefault('mailOptions', {})['clientSideEncryptedOption'] = getChoice(VAULT_CSE_OPTION_MAP, mapChoice=True)
 # voice
   elif myarg == 'covereddata':
     query['voiceOptions'] = {'coveredData': getChoice(VAULT_VOICE_COVERED_DATA_MAP, mapChoice=True)}
@@ -40519,7 +40713,7 @@ def _validateVaultQuery(body, corpusArgumentMap):
       if body['query']['corpus'] != corpus:
         body['exportOptions'].pop(options, None)
 
-# gam create vaultexport|export matter <MatterItem> [name <String>] corpus calendar|drive|mail|groups|hangouts_chat|voice
+# gam create vaultexport|export matter <MatterItem> [name <String>] corpus calendar|drive|gemini|groups|hangouts_chat|mail|voice
 #	(accounts <EmailAddressEntity>) | (orgunit|org|ou <OrgUnitPath>) | everyone
 #	(shareddrives|teamdrives <TeamDriveIDList>) | (rooms <RoomList>) | (sitesurl <URLList>)
 #	[scope <all_data|held_data|unprocessed_data>]
@@ -40527,10 +40721,12 @@ def _validateVaultQuery(body, corpusArgumentMap):
 #	[locationquery <StringList>] [peoplequery <StringList>] [minuswords <StringList>]
 #	[responsestatuses <AttendeeStatus>(,<AttendeeStatus>)*] [calendarversiondate <Date>|<Time>]
 #	[includeshareddrives <Boolean>] [driveversiondate <Date>|<Time>] [includeaccessinfo <Boolean>]
+#	[driveclientsideencryption any|encrypted|unencrypted]
 #	[includerooms <Boolean>]
-#	[excludedrafts <Boolean>] [format mbox|pst]
+#	[excludedrafts <Boolean>] [mailclientsideencryption any|encrypted|unencrypted]
 #	[showconfidentialmodecontent <Boolean>] [usenewexport <Boolean>] [exportlinkeddrivefiles <Boolean>]
 #	[covereddata calllogs|textmessages|voicemails]
+#	[format ics|mbox|pst|xml]
 #	[region any|europe|us] [showdetails|returnidonly]
 def doCreateVaultExport():
   v = buildGAPIObject(API.VAULT)
@@ -40625,10 +40821,10 @@ def doDeleteVaultExport():
       unknownArgumentExit()
   try:
     callGAPI(v.matters().exports(), 'delete',
-             throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+             throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
              matterId=matterId, exportId=exportId)
     entityActionPerformed([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_EXPORT, exportNameId])
-  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden) as e:
+  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_EXPORT, exportNameId], str(e))
 
 VAULT_EXPORT_FIELDS_CHOICE_MAP = {
@@ -40679,10 +40875,10 @@ def doInfoVaultExport():
   fields = getFieldsFromFieldsList(fieldsList)
   try:
     export = callGAPI(v.matters().exports(), 'get',
-                      throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                      throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                       matterId=matterId, exportId=exportId, fields=fields)
     _showVaultExport(matterNameId, export, cd, FJQC)
-  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden) as e:
+  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_EXPORT, exportNameId], str(e))
 
 VAULT_EXPORT_STATUS_MAP = {'completed': 'COMPLETED', 'failed': 'FAILED', 'inprogress': 'IN_PROGRESS'}
@@ -40745,9 +40941,9 @@ def doPrintShowVaultExports():
     try:
       results = callGAPIpages(v.matters(), 'list', 'matters',
                               pageMessage=getPageMessage(),
-                              throwReasons=[GAPI.FORBIDDEN],
+                              throwReasons=[GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                               view='BASIC', state='OPEN', fields='matters(matterId,name,state),nextPageToken')
-    except GAPI.forbidden as e:
+    except (GAPI.forbidden, GAPI.invalidArgument) as e:
       entityActionFailedWarning([Ent.VAULT_EXPORT, None], str(e))
       return
   else:
@@ -40775,12 +40971,12 @@ def doPrintShowVaultExports():
       try:
         exports = callGAPIpages(v.matters().exports(), 'list', 'exports',
                                 pageMessage=pageMessage,
-                                throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
+                                throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                                 matterId=matterId, fields=fields)
       except GAPI.failedPrecondition:
         warnMatterNotOpen(v, matter, matterNameId, j, jcount)
         continue
-      except GAPI.forbidden as e:
+      except (GAPI.forbidden, GAPI.invalidArgument) as e:
         entityActionFailedWarning([Ent.VAULT_EXPORT, None], str(e))
         break
     else:
@@ -40875,9 +41071,9 @@ def doCopyVaultExport():
   while True:
     try:
       export = callGAPI(v.matters().exports(), 'get',
-                        throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                        throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                         matterId=matterId, exportId=exportId)
-    except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden) as e:
+    except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden, GAPI.invalidArgument) as e:
       entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_EXPORT, exportNameId], str(e))
       return
     if export['status'] == 'COMPLETED':
@@ -40975,9 +41171,9 @@ def doDownloadVaultExport():
   while True:
     try:
       export = callGAPI(v.matters().exports(), 'get',
-                        throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                        throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                         matterId=matterId, exportId=exportId)
-    except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden) as e:
+    except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden, GAPI.invalidArgument) as e:
       entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_EXPORT, exportNameId], str(e))
       return
     if export['status'] == 'COMPLETED':
@@ -41165,7 +41361,8 @@ def doCreateVaultHold():
       body['accounts'].append({'accountId': convertEmailAddressToUID(account, cd, accountType, accountsLocation)})
   try:
     hold = callGAPI(v.matters().holds(), 'create',
-                    throwReasons=[GAPI.ALREADY_EXISTS, GAPI.BAD_REQUEST, GAPI.BACKEND_ERROR, GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
+                    throwReasons=[GAPI.ALREADY_EXISTS, GAPI.BAD_REQUEST, GAPI.BACKEND_ERROR, GAPI.FAILED_PRECONDITION,
+                                  GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                     matterId=matterId, body=body)
     if not returnIdOnly:
       entityActionPerformed([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, formatVaultNameId(hold['name'], hold['holdId'])])
@@ -41173,7 +41370,8 @@ def doCreateVaultHold():
         _showVaultHold(None, hold, None, None)
     else:
       writeStdout(f'{hold["holdId"]}\n')
-  except (GAPI.alreadyExists, GAPI.badRequest, GAPI.backendError, GAPI.failedPrecondition, GAPI.forbidden) as e:
+  except (GAPI.alreadyExists, GAPI.badRequest, GAPI.backendError, GAPI.failedPrecondition,
+          GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, body.get('name')], str(e))
 
 # gam update vaulthold|hold <HoldItem> matter <MatterItem>
@@ -41218,9 +41416,9 @@ def doUpdateVaultHold():
     missingArgumentExit('matter')
   try:
     old_body = callGAPI(v.matters().holds(), 'get',
-                        throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                        throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                         matterId=matterId, holdId=holdId, fields='name,corpus,query,orgUnit')
-  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden) as e:
+  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId], str(e))
     return
   accountType = 'group' if old_body['corpus'] == 'GROUPS' else 'user'
@@ -41246,10 +41444,10 @@ def doUpdateVaultHold():
   if body:
     try:
       hold = callGAPI(v.matters().holds(), 'update',
-                      throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                      throwReas=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                       matterId=matterId, holdId=holdId, body=body)
       entityActionPerformed([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId])
-    except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden) as e:
+    except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden, GAPI.invalidArgument) as e:
       entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId], str(e))
       return
   jcount = len(addAccountIds)
@@ -41262,12 +41460,12 @@ def doUpdateVaultHold():
       j += 1
       try:
         callGAPI(v.matters().holds().accounts(), 'create',
-                 throwReasons=[GAPI.ALREADY_EXISTS, GAPI.BACKEND_ERROR, GAPI.FORBIDDEN],
+                 throwReasons=[GAPI.ALREADY_EXISTS, GAPI.BACKEND_ERROR, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                  matterId=matterId, holdId=holdId, body={'accountId': account['id']})
         entityActionPerformed([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId, Ent.ACCOUNT, account['email']], j, jcount)
       except (GAPI.alreadyExists, GAPI.backendError) as e:
         entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId, Ent.ACCOUNT, account['email']], str(e), j, jcount)
-      except GAPI.forbidden as e:
+      except (GAPI.forbidden, GAPI.invalidArgument) as e:
         entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, None], str(e))
         return
     Ind.Decrement()
@@ -41283,12 +41481,12 @@ def doUpdateVaultHold():
       j += 1
       try:
         callGAPI(v.matters().holds().accounts(), 'delete',
-                 throwReasons=[GAPI.NOT_FOUND, GAPI.BACKEND_ERROR, GAPI.FORBIDDEN],
+                 throwReasons=[GAPI.NOT_FOUND, GAPI.BACKEND_ERROR, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                  matterId=matterId, holdId=holdId, accountId=account['id'])
         entityActionPerformed([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId, Ent.ACCOUNT, account['email']], j, jcount)
       except (GAPI.alreadyExists, GAPI.backendError) as e:
         entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId, Ent.ACCOUNT, account['email']], str(e), j, jcount)
-      except GAPI.forbidden as e:
+      except (GAPI.forbidden, GAPI.invalidArgument) as e:
         entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, None], str(e))
         return
     Ind.Decrement()
@@ -41313,10 +41511,10 @@ def doDeleteVaultHold():
       unknownArgumentExit()
   try:
     callGAPI(v.matters().holds(), 'delete',
-             throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+             throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
              matterId=matterId, holdId=holdId)
     entityActionPerformed([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId])
-  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden) as e:
+  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId], str(e))
 
 VAULT_HOLD_FIELDS_CHOICE_MAP = {
@@ -41366,10 +41564,10 @@ def doInfoVaultHold():
   fields = getFieldsFromFieldsList(fieldsList)
   try:
     hold = callGAPI(v.matters().holds(), 'get',
-                    throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                    throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                     matterId=matterId, holdId=holdId, fields=fields)
     _showVaultHold(matterNameId, hold, cd, FJQC)
-  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden) as e:
+  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_HOLD, holdNameId], str(e))
 
 PRINT_VAULT_HOLDS_TITLES = ['matterId', 'matterName', 'holdId', 'name', 'updateTime']
@@ -41420,9 +41618,9 @@ def doPrintShowVaultHolds():
     try:
       results = callGAPIpages(v.matters(), 'list', 'matters',
                               pageMessage=getPageMessage(),
-                              throwReasons=[GAPI.FORBIDDEN],
+                              throwReasons=[GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                               view='BASIC', state='OPEN', fields='matters(matterId,name,state),nextPageToken')
-    except GAPI.forbidden as e:
+    except (GAPI.forbidden, GAPI.invalidArgument) as e:
       entityActionFailedWarning([Ent.VAULT_HOLD, None], str(e))
       return
   else:
@@ -41449,12 +41647,12 @@ def doPrintShowVaultHolds():
       try:
         holds = callGAPIpages(v.matters().holds(), 'list', 'holds',
                               pageMessage=pageMessage,
-                              throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
+                              throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                               matterId=matterId, fields=fields)
       except GAPI.failedPrecondition:
         warnMatterNotOpen(v, matter, matterNameId, j, jcount)
         continue
-      except GAPI.forbidden as e:
+      except (GAPI.forbidden, GAPI.invalidArgument) as e:
         entityActionFailedWarning([Ent.VAULT_HOLD, None], str(e))
         break
     else:
@@ -41500,9 +41698,9 @@ def printShowUserVaultHolds(entityList):
   try:
     matters = callGAPIpages(v.matters(), 'list', 'matters',
                             pageMessage=getPageMessage(),
-                            throwReasons=[GAPI.FORBIDDEN],
+                            throwReasons=[GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                             view='BASIC', state='OPEN', fields='matters(matterId,name,state),nextPageToken')
-  except GAPI.forbidden as e:
+  except (GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_HOLD, None], str(e))
     return
   jcount = len(matters)
@@ -41516,11 +41714,11 @@ def printShowUserVaultHolds(entityList):
     try:
       matter['holds'] = callGAPIpages(v.matters().holds(), 'list', 'holds',
                                       pageMessage=getPageMessageForWhom(),
-                                      throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
+                                      throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                                       matterId=matterId, fields='holds(holdId,name,accounts(accountId,email),orgUnit(orgUnitId)),nextPageToken')
     except GAPI.failedPrecondition:
       warnMatterNotOpen(v, matter, matterNameId, j, jcount)
-    except GAPI.forbidden as e:
+    except (GAPI.forbidden, GAPI.invalidArgument) as e:
       entityActionFailedWarning([Ent.VAULT_HOLD, None], str(e), j, jcount)
   totalHolds = 0
   _, _, entityList = getEntityArgument(entityList)
@@ -41564,23 +41762,22 @@ def printShowUserVaultHolds(entityList):
   else:
     printKeyValueList(['Total Holds', totalHolds])
 
-def _cleanVaultQuery(query, cd, drive):
+def _cleanVaultQuery(query, cd):
   if 'query' in query:
     if cd is not None:
       if 'orgUnitInfo' in query['query']:
         query['query']['orgUnitInfo']['orgUnitPath'] = convertOrgUnitIDtoPath(cd, query['query']['orgUnitInfo']['orgUnitId'])
-    if drive is not None:
       if 'sharedDriveInfo' in query['query']:
         query['query']['sharedDriveInfo']['sharedDriveNames'] = []
         for sharedDriveId in query['query']['sharedDriveInfo']['sharedDriveIds']:
-          query['query']['sharedDriveInfo']['sharedDriveNames'].append(_getSharedDriveNameFromId(drive, sharedDriveId, useDomainAdminAccess=True))
+          query['query']['sharedDriveInfo']['sharedDriveNames'].append(_getSharedDriveNameFromId(sharedDriveId))
     query['query'].pop('searchMethod', None)
     query['query'].pop('teamDriveInfo', None)
 
 VAULT_QUERY_TIME_OBJECTS = {'createTime', 'endTime', 'startTime', 'versionDate'}
 
-def _showVaultQuery(matterNameId, query, cd, drive, FJQC, k=0, kcount=0):
-  _cleanVaultQuery(query, cd, drive)
+def _showVaultQuery(matterNameId, query, cd, FJQC, k=0, kcount=0):
+  _cleanVaultQuery(query, cd)
   if FJQC is not None and FJQC.formatJSON:
     printLine(json.dumps(cleanJSON(query, timeObjects=VAULT_QUERY_TIME_OBJECTS), ensure_ascii=False, sort_keys=False))
     return
@@ -41612,7 +41809,7 @@ def doInfoVaultQuery():
     queryId, queryName, queryNameId = convertQueryNameToID(v, getString(Cmd.OB_QUERY_ITEM), matterId, matterNameId)
   else:
     queryName = getString(Cmd.OB_QUERY_ITEM)
-  cd = drive = None
+  cd = None
   fieldsList = []
   FJQC = FormatJSONQuoteChar()
   while Cmd.ArgumentsRemaining():
@@ -41622,8 +41819,8 @@ def doInfoVaultQuery():
       queryId, queryName, queryNameId = convertQueryNameToID(v, queryName, matterId, matterNameId)
     elif myarg == 'shownames':
       cd = buildGAPIObject(API.DIRECTORY)
-      _, drive = buildGAPIServiceObject(API.DRIVE3, _getAdminEmail())
-      if drive is None:
+      _, GM.Globals[GM.ADMIN_DRIVE] = buildGAPIServiceObject(API.DRIVE3, _getAdminEmail())
+      if GM.Globals[GM.ADMIN_DRIVE] is None:
         return
     elif getFieldsList(myarg, VAULT_QUERY_FIELDS_CHOICE_MAP, fieldsList, initialField=['savedQueryId', 'displayName']):
       pass
@@ -41632,10 +41829,10 @@ def doInfoVaultQuery():
   fields = getFieldsFromFieldsList(fieldsList)
   try:
     query = callGAPI(v.matters().savedQueries(), 'get',
-                    throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                    throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                     matterId=matterId, savedQueryId=queryId, fields=fields)
-    _showVaultQuery(matterNameId, query, cd, drive, FJQC)
-  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden) as e:
+    _showVaultQuery(matterNameId, query, cd, FJQC)
+  except (GAPI.notFound, GAPI.badRequest, GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId, Ent.VAULT_QUERY, queryNameId], str(e))
 
 PRINT_VAULT_QUERIES_TITLES = ['matterId', 'matterName', 'savedQueryId', 'displayName']
@@ -41651,7 +41848,7 @@ def doPrintShowVaultQueries():
   csvPF = CSVPrintFile(PRINT_VAULT_QUERIES_TITLES, 'sortall') if Act.csvFormat() else None
   FJQC = FormatJSONQuoteChar(csvPF)
   matters = []
-  cd = drive = None
+  cd = None
   fieldsList = []
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
@@ -41661,8 +41858,8 @@ def doPrintShowVaultQueries():
       matters = shlexSplitList(getString(Cmd.OB_MATTER_ITEM_LIST))
     elif myarg == 'shownames':
       cd = buildGAPIObject(API.DIRECTORY)
-      _, drive = buildGAPIServiceObject(API.DRIVE3, _getAdminEmail())
-      if drive is None:
+      _, GM.Globals[GM.ADMIN_DRIVE] = buildGAPIServiceObject(API.DRIVE3, _getAdminEmail())
+      if GM.Globals[GM.ADMIN_DRIVE] is None:
         return
     elif getFieldsList(myarg, VAULT_QUERY_FIELDS_CHOICE_MAP, fieldsList, initialField=['savedQueryId', 'displayName']):
       pass
@@ -41676,9 +41873,9 @@ def doPrintShowVaultQueries():
     try:
       results = callGAPIpages(v.matters(), 'list', 'matters',
                               pageMessage=getPageMessage(),
-                              throwReasons=[GAPI.FORBIDDEN],
+                              throwReasons=[GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                               view='BASIC', state='OPEN', fields='matters(matterId,name,state),nextPageToken')
-    except GAPI.forbidden as e:
+    except (GAPI.forbidden, GAPI.invalidArgument) as e:
       entityActionFailedWarning([Ent.VAULT_QUERY, None], str(e))
       return
   else:
@@ -41705,12 +41902,12 @@ def doPrintShowVaultQueries():
       try:
         queries = callGAPIpages(v.matters().savedQueries(), 'list', 'savedQueries',
                                 pageMessage=pageMessage,
-                                throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
+                                throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                                 matterId=matterId, fields=fields)
       except GAPI.failedPrecondition:
         warnMatterNotOpen(v, matter, matterNameId, j, jcount)
         continue
-      except GAPI.forbidden as e:
+      except (GAPI.forbidden, GAPI.invalidArgument) as e:
         entityActionFailedWarning([Ent.VAULT_QUERY, None], str(e))
         break
     else:
@@ -41724,11 +41921,11 @@ def doPrintShowVaultQueries():
       k = 0
       for query in queries:
         k += 1
-        _showVaultQuery(matterNameId, query, cd, drive, FJQC, k, kcount)
+        _showVaultQuery(matterNameId, query, cd, FJQC, k, kcount)
       Ind.Decrement()
     else:
       for query in queries:
-        _cleanVaultQuery(query, cd, drive)
+        _cleanVaultQuery(query, cd)
         row = flattenJSON(query, flattened={'matterId': matterId, 'matterName': matterName}, timeObjects=VAULT_QUERY_TIME_OBJECTS)
         if not FJQC.formatJSON:
           csvPF.WriteRowTitles(row)
@@ -41797,7 +41994,7 @@ def doCreateVaultMatter():
     body['name'] = f'GAM Matter - {ISOformatTimeStamp(todaysTime())}'
   try:
     matter = callGAPI(v.matters(), 'create',
-                      throwReasons=[GAPI.ALREADY_EXISTS, GAPI.FORBIDDEN],
+                      throwReasons=[GAPI.ALREADY_EXISTS, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                       body=body)
     matterId = matter['matterId']
     matterNameId = formatVaultNameId(matter['name'], matterId)
@@ -41805,7 +42002,7 @@ def doCreateVaultMatter():
       entityActionPerformed([Ent.VAULT_MATTER, matterNameId])
     else:
       writeStdout(f'{matterId}\n')
-  except (GAPI.alreadyExists, GAPI.forbidden) as e:
+  except (GAPI.alreadyExists, GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, body['name']], str(e))
     return
   jcount = len(collaborators)
@@ -41820,11 +42017,11 @@ def doCreateVaultMatter():
       cbody['matterPermission']['accountId'] = collaborator['id']
       try:
         callGAPI(v.matters(), 'addPermissions',
-                 throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
+                 throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                  matterId=matterId, body=cbody)
         if not returnIdOnly:
           entityActionPerformed([Ent.VAULT_MATTER, matterNameId, Ent.COLLABORATOR, collaborator['email']], j, jcount)
-      except (GAPI.failedPrecondition, GAPI.forbidden) as e:
+      except (GAPI.failedPrecondition, GAPI.forbidden, GAPI.invalidArgument) as e:
         entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId], str(e))
         break
     Ind.Decrement()
@@ -41848,10 +42045,10 @@ def doActionVaultMatter(action, matterId=None, matterNameId=None, v=None):
   action_kwargs = {} if action == 'delete' else {'body': {}}
   try:
     callGAPI(v.matters(), action,
-             throwReasons=[GAPI.NOT_FOUND, GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
+             throwReasons=[GAPI.NOT_FOUND, GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
              matterId=matterId, **action_kwargs)
     entityActionPerformed([Ent.VAULT_MATTER, matterNameId])
-  except (GAPI.notFound, GAPI.failedPrecondition, GAPI.forbidden) as e:
+  except (GAPI.notFound, GAPI.failedPrecondition, GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId], str(e))
 
 # gam close vaultmatter|matter <MatterItem>
@@ -41904,7 +42101,7 @@ def doUpdateVaultMatter():
       if 'name' not in body or 'description' not in body:
         # bah, API requires name/description to be sent on update even when it's not changing
         result = callGAPI(v.matters(), 'get',
-                          throwReasons=[GAPI.NOT_FOUND, GAPI.FORBIDDEN],
+                          throwReasons=[GAPI.NOT_FOUND, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                           matterId=matterId, view='BASIC')
         body.setdefault('name', result['name'])
         body.setdefault('description', result.get('description'))
@@ -41912,7 +42109,7 @@ def doUpdateVaultMatter():
                throwReasons=[GAPI.NOT_FOUND, GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
                matterId=matterId, body=body)
       entityActionPerformed([Ent.VAULT_MATTER, matterNameId])
-    except (GAPI.notFound, GAPI.failedPrecondition, GAPI.forbidden) as e:
+    except (GAPI.notFound, GAPI.failedPrecondition, GAPI.forbidden, GAPI.invalidArgument) as e:
       entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId], str(e))
       return
   jcount = len(addCollaborators)
@@ -41925,10 +42122,10 @@ def doUpdateVaultMatter():
       j += 1
       try:
         callGAPI(v.matters(), 'addPermissions',
-                 throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
+                 throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                  matterId=matterId, body={'matterPermission': {'role': 'COLLABORATOR', 'accountId': collaborator['id']}})
         entityActionPerformed([Ent.VAULT_MATTER, matterNameId, Ent.COLLABORATOR, collaborator['email']], j, jcount)
-      except (GAPI.failedPrecondition, GAPI.forbidden) as e:
+      except (GAPI.failedPrecondition, GAPI.forbidden, GAPI.invalidArgument) as e:
         entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId], str(e))
         break
     Ind.Decrement()
@@ -41942,10 +42139,10 @@ def doUpdateVaultMatter():
       j += 1
       try:
         callGAPI(v.matters(), 'removePermissions',
-                 throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN],
+                 throwReasons=[GAPI.FAILED_PRECONDITION, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                  matterId=matterId, body={'accountId': collaborator['id']})
         entityActionPerformed([Ent.VAULT_MATTER, matterNameId, Ent.COLLABORATOR, collaborator['email']], j, jcount)
-      except (GAPI.failedPrecondition, GAPI.forbidden) as e:
+      except (GAPI.failedPrecondition, GAPI.forbidden, GAPI.invalidArgument) as e:
         entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId], str(e))
         break
     Ind.Decrement()
@@ -41978,11 +42175,11 @@ def doInfoVaultMatter():
   fields = getFieldsFromFieldsList(fieldsList)
   try:
     matter = callGAPI(v.matters(), 'get',
-                      throwReasons=[GAPI.NOT_FOUND, GAPI.FORBIDDEN],
+                      throwReasons=[GAPI.NOT_FOUND, GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT],
                       matterId=matterId, view=view, fields=fields)
     cd = buildGAPIObject(API.DIRECTORY) if 'matterPermissions' in matter else None
     _showVaultMatter(matter, cd, FJQC)
-  except (GAPI.notFound, GAPI.forbidden) as e:
+  except (GAPI.notFound, GAPI.forbidden, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, matterNameId], str(e))
 
 VAULT_MATTER_STATE_MAP = {'open': 'OPEN', 'closed': 'CLOSED', 'deleted': 'DELETED'}
@@ -42038,9 +42235,9 @@ def doPrintShowVaultMatters():
   try:
     matters = callGAPIpages(v.matters(), 'list', 'matters',
                             pageMessage=getPageMessage(),
-                            throwReasons=[GAPI.FORBIDDEN],
+                            throwReasons=[GAPI.FORBIDDEN, GAPI.INVALID_ARGUMENT, GAPI.INVALID_ARGUMENT],
                             view=view, state=stateParm, fields=fields)
-  except GAPI.forbidden as e:
+  except (GAPI.forbidden, GAPI.invalidArgument, GAPI.invalidArgument) as e:
     entityActionFailedWarning([Ent.VAULT_MATTER, None], str(e))
     return
   jcount = len(matters)
@@ -42166,776 +42363,26 @@ def doPrintVaultCounts():
     csvPF.WriteRow({'account': account, 'count': 0})
   csvPF.writeCSVfile('Vault Counts')
 
-def checkSiteExists(sitesObject, domain, site):
-  try:
-    callGData(sitesObject, 'GetSite',
-              throwErrors=[GDATA.NOT_FOUND],
-              retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-              domain=domain, site=site)
-    return True
-  except GDATA.notFound:
-    return None
-
-SITE_ACLS = 'ACLs'
-SITE_CATEGORIES = 'Categories'
-SITE_LINK = 'Link'
-SITE_NAME = 'Name'
-SITE_SITE = 'Site'
-SITE_SOURCELINK = 'SourceLink'
-SITE_SUMMARY = 'Summary'
-SITE_THEME = 'Theme'
-SITE_UPDATED = 'Updated'
-SITE_WEB_ADDRESS_MAPPINGS = 'WebAddressMappings'
-
-SITE_DATA_DOMAIN = 'domain'
-SITE_DATA_SITE = 'site'
-SITE_DATA_DOMAIN_SITE = 'domainSite'
-SITE_DATA_FIELDS = 'fields'
-
-class SitesManager():
-
-  SITE_ARGUMENT_TO_PROPERTY_MAP = {
-    'categories': SITE_CATEGORIES,
-    'name': SITE_NAME,
-    'sourcelink': SITE_SOURCELINK,
-    'summary': SITE_SUMMARY,
-    'theme': SITE_THEME,
-    }
-
-  @staticmethod
-  def AclEntryToFields(acl_entry):
-
-    def GetAclAttr(attrlist):
-      objAttr = acl_entry
-      for attr in attrlist:
-        objAttr = getattr(objAttr, attr)
-        if not objAttr:
-          return None
-      return objAttr
-
-    fields = {}
-    fields['role'] = GetAclAttr(['role', 'value'])
-    if not fields['role']:
-      fields['role'] = GetAclAttr(['withKey', 'role', 'value'])+' (with link)'
-    fields['scope'] = {'type': GetAclAttr(['scope', 'type']),
-                       'value': GetAclAttr(['scope', 'value'])}
-    link = acl_entry.FindInviteLink()
-    if link:
-      fields['inviteLink'] = link
-    return fields
-
-  @staticmethod
-  def FieldsToAclEntry(fields):
-    acl_entry = gdata.apps.sites.AclEntry()
-    acl_entry.role = gdata.apps.sites.AclRole(value=fields['role'])
-    acl_entry.scope = gdata.apps.sites.AclScope(stype=fields['scope']['type'], value=fields['scope'].get('value'))
-    return acl_entry
-
-  @staticmethod
-  def ActivityEntryToFields(activity_entry):
-    fields = {}
-
-    def GetActivityField(fieldName, attrlist):
-      objAttr = activity_entry
-      for attr in attrlist:
-        objAttr = getattr(objAttr, attr)
-        if not objAttr:
-          return
-      fields[fieldName] = objAttr
-
-    def GetActivityFieldData(objAttr, attrlist, default):
-      for attr in attrlist:
-        objAttr = getattr(objAttr, attr)
-        if not objAttr:
-          return default
-      return  objAttr
-
-    def AppendItemToFieldsList(fieldName, fieldValue):
-      fields.setdefault(fieldName, [])
-      fields[fieldName].append(fieldValue)
-
-    GetActivityField('Summary', ['title', 'text'])
-    GetActivityField('Updated', ['updated', 'text'])
-    for author in activity_entry.author:
-      AppendItemToFieldsList('Authors', f'{GetActivityFieldData(author, ["name", "text"], "Unknown Name")}/{GetActivityFieldData(author, ["email", "text"], "Unknown Email")}')
-    fields['Operation'] = activity_entry.Kind()
-    return fields
-
-  @staticmethod
-  def SiteToFields(site_entry):
-    fields = {}
-
-    def GetSiteField(fieldName, attrlist):
-      objAttr = site_entry
-      for attr in attrlist:
-        objAttr = getattr(objAttr, attr)
-        if not objAttr:
-          return
-      fields[fieldName] = objAttr
-
-    def AppendItemToFieldsList(fieldName, fieldValue):
-      fields.setdefault(fieldName, [])
-      fields[fieldName].append(fieldValue)
-
-    GetSiteField(SITE_SITE, ['siteName', 'text'])
-    GetSiteField(SITE_NAME, ['title', 'text'])
-    GetSiteField(SITE_SUMMARY, ['summary', 'text'])
-    GetSiteField(SITE_THEME, ['theme', 'text'])
-    GetSiteField(SITE_UPDATED, ['updated', 'text'])
-    if site_entry.category:
-      for category in site_entry.category:
-        if category.term:
-          AppendItemToFieldsList(SITE_CATEGORIES, category.term)
-    link = site_entry.FindAlternateLink()
-    if link:
-      fields[SITE_LINK] = link
-    link = site_entry.FindSourceLink()
-    if link:
-      fields[SITE_SOURCELINK] = link
-    for link in site_entry.FindWebAddressMappings():
-      AppendItemToFieldsList(SITE_WEB_ADDRESS_MAPPINGS, link)
-    return fields
-
-  @staticmethod
-  def GetSiteFields():
-
-    fields = {}
-    while Cmd.ArgumentsRemaining():
-      myarg = getArgument()
-      if myarg in SitesManager.SITE_ARGUMENT_TO_PROPERTY_MAP:
-        fieldName = SitesManager.SITE_ARGUMENT_TO_PROPERTY_MAP[myarg]
-        if fieldName == SITE_NAME:
-          fields[fieldName] = getString(Cmd.OB_STRING)
-        elif fieldName == SITE_SOURCELINK:
-          fields[fieldName] = getString(Cmd.OB_URI)
-        elif fieldName == SITE_SUMMARY:
-          fields[fieldName] = getStringWithCRsNLs()
-        elif fieldName == SITE_THEME:
-          fields[fieldName] = getString(Cmd.OB_STRING)
-        elif fieldName == SITE_CATEGORIES:
-          fields[fieldName] = getString(Cmd.OB_STRING, minLen=0).split(',')
-      else:
-        unknownArgumentExit()
-    return fields
-
-  @staticmethod
-  def FieldsToSite(fields):
-    def GetField(fieldName):
-      return fields.get(fieldName)
-
-    def GetSiteField(fieldName, fieldClass):
-      value = fields.get(fieldName)
-      if value:
-        return fieldClass(text=value)
-      return None
-
-    site_entry = gdata.apps.sites.SiteEntry(sourceSite=GetField(SITE_SOURCELINK))
-    site_entry.siteName = GetSiteField(SITE_SITE, gdata.apps.sites.SiteName)
-    site_entry.title = GetSiteField(SITE_NAME, atom.Title)
-    site_entry.summary = GetSiteField(SITE_SUMMARY, atom.Summary)
-    site_entry.theme = GetSiteField(SITE_THEME, gdata.apps.sites.Theme)
-    value = GetField(SITE_CATEGORIES)
-    if value:
-      for category in value:
-        site_entry.category.append(atom.Category(term=category, scheme=gdata.apps.sites.TAG_KIND_TERM))
-    return site_entry
-
-def getSiteEntity():
-  siteEntity = {'list': getEntityList(Cmd.OB_SITE_ENTITY), 'dict': None}
-  if isinstance(siteEntity['list'], dict):
-    siteEntity['dict'] = siteEntity['list']
-  return siteEntity
-
-def _validateUserGetSites(entityType, user, i, count, siteEntity, itemType=None, modifier=None):
-  if siteEntity['dict']:
-    sites = siteEntity['dict'][user]
-  else:
-    sites = siteEntity['list']
-  user, sitesObject = getSitesObject(entityType, user, i, count)
-  if not sitesObject:
-    return (user, None, None, 0)
-  jcount = len(sites)
-  if not itemType:
-    entityPerformActionNumItems([entityType, user], jcount, Ent.SITE, i, count)
-  else:
-    entityPerformActionSubItemModifierNumItems([entityType, user], itemType, modifier, jcount, Ent.SITE, i, count)
-  if jcount == 0:
-    setSysExitRC(NO_ENTITIES_FOUND_RC)
-  return (user, sitesObject, sites, jcount)
-
-def _validateSite(fullSite, i, count):
-  domain, site, domainSite = validateSplitSiteName(fullSite)
-  if domainSite:
-    return (domain, site, domainSite)
-  entityActionNotPerformedWarning([Ent.SITE, site], Msg.INVALID_SITE.format(site, SITENAME_FORMAT_REQUIRED), i, count)
-  return (domain, site, None)
-
-def _validateSiteGetRuleIds(origUser, fullSite, j, jcount, ACLScopeEntity, showAction=True):
-  domain, site, domainSite = _validateSite(fullSite, j, jcount)
-  if not domainSite:
-    return (domain, site, None, None, 0)
-  if ACLScopeEntity:
-    if ACLScopeEntity['dict']:
-      if not GM.Globals[GM.CSV_SUBKEY_FIELD]:
-        ruleIds = ACLScopeEntity['dict'][fullSite]
-      else:
-        ruleIds = ACLScopeEntity['dict'][origUser][fullSite]
-    else:
-      ruleIds = ACLScopeEntity['list']
-    kcount = len(ruleIds)
-    if kcount == 0:
-      setSysExitRC(NO_ENTITIES_FOUND_RC)
-  else:
-    ruleIds = []
-    kcount = 0
-  if showAction:
-    entityPerformActionNumItems([Ent.SITE, domainSite], kcount, Ent.SITE_ACL, j, jcount)
-  return (domain, site, domainSite, ruleIds, kcount)
-
-def _createSite(users, entityType):
-  sitesManager = SitesManager()
-  domain, site, domainSite = getSiteName()
-  fields = sitesManager.GetSiteFields()
-  if not fields.get(SITE_NAME):
-    fields[SITE_NAME] = site
-  i, count, users = getEntityArgument(users)
-  for user in users:
-    i += 1
-    user, sitesObject = getSitesObject(entityType, user, i, count)
-    if not sitesObject:
-      continue
-    try:
-      siteEntry = sitesManager.FieldsToSite(fields)
-      callGData(sitesObject, 'CreateSite',
-                throwErrors=[GDATA.NOT_FOUND, GDATA.ENTITY_EXISTS, GDATA.BAD_REQUEST, GDATA.FORBIDDEN],
-                retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                siteentry=siteEntry, domain=domain, site=None)
-      entityActionPerformed([Ent.SITE, domainSite])
-    except GDATA.notFound as e:
-      entityActionFailedWarning([Ent.DOMAIN, domain], str(e))
-    except (GDATA.entityExists, GDATA.badRequest, GDATA.forbidden) as e:
-      entityActionFailedWarning([Ent.SITE, domainSite], str(e))
-
 # gam [<UserTypeEntity>] create site <SiteName> <SiteAttribute>*
-def createUserSite(users):
-  _createSite(users, Ent.USER)
-
-def doCreateDomainSite():
-  _createSite([GC.Values[GC.DOMAIN]], Ent.DOMAIN)
-
-def _updateSites(users, entityType):
-  sitesManager = SitesManager()
-  siteEntity = getSiteEntity()
-  updateFields = sitesManager.GetSiteFields()
-  i, count, users = getEntityArgument(users)
-  for user in users:
-    i += 1
-    user, sitesObject, sites, jcount = _validateUserGetSites(entityType, user, i, count, siteEntity)
-    if jcount == 0:
-      continue
-    Ind.Increment()
-    j = 0
-    for site in sites:
-      j += 1
-      domain, site, domainSite = _validateSite(site, j, jcount)
-      if not domainSite:
-        continue
-      try:
-        siteEntry = callGData(sitesObject, 'GetSite',
-                              throwErrors=[GDATA.NOT_FOUND, GDATA.FORBIDDEN],
-                              retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                              domain=domain, site=site)
-        fields = sitesManager.SiteToFields(siteEntry)
-        for field, value in iter(updateFields.items()):
-          if field != SITE_SOURCELINK:
-            fields[field] = value
-        newSiteEntry = sitesManager.FieldsToSite(fields)
-        callGData(sitesObject, 'UpdateSite',
-                  throwErrors=[GDATA.NOT_FOUND, GDATA.BAD_REQUEST, GDATA.FORBIDDEN],
-                  retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                  siteentry=newSiteEntry, domain=domain, site=site, extra_headers={'If-Match': siteEntry.etag})
-        entityActionPerformed([Ent.SITE, domainSite])
-      except (GDATA.notFound, GDATA.badRequest, GDATA.forbidden) as e:
-        entityActionFailedWarning([Ent.SITE, domainSite], str(e))
-
 # gam [<UserTypeEntity>] update site <SiteEntity> <SiteAttribute>+
-def updateUserSites(users):
-  _updateSites(users, Ent.USER)
-
-def doUpdateDomainSites():
-  _updateSites([GC.Values[GC.DOMAIN]], Ent.DOMAIN)
-
-SITE_FIELD_PRINT_ORDER = [
-  SITE_UPDATED,
-  SITE_NAME,
-  SITE_SUMMARY,
-  SITE_THEME,
-  SITE_SOURCELINK,
-  SITE_CATEGORIES,
-  SITE_LINK,
-  ]
-
-def _showSite(sitesManager, sitesObject, domain, site, roles, j, jcount):
-  fields = sitesManager.SiteToFields(site)
-  domainSite = f'{domain}/{fields[SITE_SITE]}'
-  printKeyValueListWithCount([SITE_SITE, domainSite], j, jcount)
-  Ind.Increment()
-  for field in SITE_FIELD_PRINT_ORDER:
-    if field in fields:
-      if not isinstance(fields[field], list):
-        if field != SITE_SUMMARY:
-          printKeyValueList([field, fields[field]])
-        else:
-          printKeyValueWithCRsNLs(field, fields[field])
-      else:
-        printKeyValueList([field, ','.join(fields[field])])
-  if fields.get(SITE_WEB_ADDRESS_MAPPINGS):
-    printKeyValueList([SITE_WEB_ADDRESS_MAPPINGS, None])
-    Ind.Increment()
-    for link in fields[SITE_WEB_ADDRESS_MAPPINGS]:
-      printKeyValueList([link, None])
-    Ind.Decrement()
-  if roles:
-    try:
-      acls = callGDataPages(sitesObject, 'GetAclFeed',
-                            throwErrors=[GDATA.NOT_FOUND, GDATA.FORBIDDEN],
-                            retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                            domain=domain, site=fields[SITE_SITE])
-      printKeyValueList([SITE_ACLS, None])
-      Ind.Increment()
-      for acl in acls:
-        fields = sitesManager.AclEntryToFields(acl)
-        if fields['role'] in roles:
-          printKeyValueList([formatACLRule(fields)])
-      Ind.Decrement()
-    except GDATA.notFound as e:
-      entityActionFailedWarning([Ent.SITE, domainSite], str(e))
-    except GDATA.forbidden:
-      pass
-  Ind.Decrement()
-
-SITE_ACL_ROLES_MAP = {
-  'editor': 'writer',
-  'invite': 'invite',
-  'owner': 'owner',
-  'read': 'reader',
-  'reader': 'reader',
-  'writer': 'writer',
-  }
-
-def _infoSites(users, entityType):
-  siteEntity = getSiteEntity()
-  url_params = {}
-  roles = set()
-  while Cmd.ArgumentsRemaining():
-    myarg = getArgument()
-    if myarg == 'withmappings':
-      url_params['with-mappings'] = 'true'
-    elif myarg in {'role', 'roles'}:
-      roles = getACLRoles(SITE_ACL_ROLES_MAP)
-    else:
-      unknownArgumentExit()
-  sitesManager = SitesManager()
-  i, count, users = getEntityArgument(users)
-  for user in users:
-    i += 1
-    user, sitesObject, sites, jcount = _validateUserGetSites(entityType, user, i, count, siteEntity)
-    if jcount == 0:
-      continue
-    Ind.Increment()
-    j = 0
-    for site in sites:
-      j += 1
-      domain, site, domainSite = _validateSite(site, j, jcount)
-      if not domainSite:
-        continue
-      try:
-        result = callGData(sitesObject, 'GetSite',
-                           throwErrors=[GDATA.NOT_FOUND, GDATA.FORBIDDEN],
-                           retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                           domain=domain, site=site, url_params=url_params)
-        if result:
-          _showSite(sitesManager, sitesObject, domain, result, roles, j, jcount)
-      except (GDATA.notFound, GDATA.forbidden) as e:
-        entityActionFailedWarning([Ent.SITE, domainSite], str(e))
-    Ind.Decrement()
-
 # gam [<UserTypeEntity>] info site <SiteEntity> [withmappings] [role|roles all|<SiteACLRoleList>]
-def infoUserSites(users):
-  _infoSites(users, Ent.USER)
-
-def doInfoDomainSites():
-  _infoSites([GC.Values[GC.DOMAIN]], Ent.DOMAIN)
-
-def printShowSites(entityList, entityType):
-  def _getSites(domain, i, count):
-    try:
-      return callGDataPages(sitesObject, 'GetSiteFeed',
-                            pageMessage=getPageMessageForWhom(),
-                            throwErrors=[GDATA.NOT_FOUND, GDATA.FORBIDDEN],
-                            retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                            domain=domain, url_params=url_params)
-    except (GDATA.notFound, GDATA.forbidden) as e:
-      entityActionFailedWarning([Ent.DOMAIN, domain], str(e), i, count)
-    return []
-
-  def _printSites(entity, i, count, domain, sites):
-    for site in sites:
-      fields = sitesManager.SiteToFields(site)
-      if fields[SITE_SITE] in sitesSet:
-        continue
-      sitesSet.add(fields[SITE_SITE])
-      domainSite = f'{domain}/{fields[SITE_SITE]}'
-      siteRow = {Ent.Singular(entityType): entity, SITE_SITE: domainSite}
-      for field, value in iter(fields.items()):
-        if field != SITE_SITE:
-          if not isinstance(value, list):
-            if field != SITE_SUMMARY or not convertCRNL:
-              siteRow[field] = value
-            else:
-              siteRow[field] = escapeCRsNLs(value)
-          else:
-            siteRow[field] = delimiter.join(value)
-      rowShown = False
-      if roles:
-        try:
-          acls = callGDataPages(sitesObject, 'GetAclFeed',
-                                throwErrors=[GDATA.NOT_FOUND, GDATA.FORBIDDEN],
-                                retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                                domain=domain, site=fields[SITE_SITE])
-          for acl in acls:
-            fields = sitesManager.AclEntryToFields(acl)
-            if fields['role'] in roles:
-              siteACLRow = siteRow.copy()
-              siteACLRow.update(ACLRuleDict(fields))
-              csvPF.WriteRowTitles(siteACLRow)
-              rowShown = True
-        except GDATA.notFound as e:
-          entityActionFailedWarning([Ent.SITE, domainSite], str(e), i, count)
-        except GDATA.forbidden:
-          pass
-      if not rowShown:
-        csvPF.WriteRowTitles(siteRow)
-
-  def _showSites(entity, i, count, domain, sites):
-    jcount = len(sites)
-    if entityType == Ent.USER:
-      entityPerformActionNumItems([entityType, entity, Ent.DOMAIN, domain], jcount, Ent.SITE, i, count)
-    else:
-      entityPerformActionNumItems([entityType, entity], jcount, Ent.SITE, i, count)
-    Ind.Increment()
-    j = 0
-    for site in sites:
-      j += 1
-      _showSite(sitesManager, sitesObject, domain, site, roles, j, jcount)
-    Ind.Decrement()
-
-  domains = []
-  domainLists = []
-  url_params = {}
-  includeAllSites = 'true' if entityType == Ent.DOMAIN else 'false'
-  roles = set()
-  convertCRNL = GC.Values[GC.CSV_OUTPUT_CONVERT_CR_NL]
-  delimiter = GC.Values[GC.CSV_OUTPUT_FIELD_DELIMITER]
-  csvPF = CSVPrintFile([Ent.Singular(entityType), SITE_SITE, SITE_NAME, SITE_SUMMARY], 'sortall') if Act.csvFormat() else None
-  while Cmd.ArgumentsRemaining():
-    myarg = getArgument()
-    if csvPF and myarg == 'todrive':
-      csvPF.GetTodriveParameters()
-    elif myarg in {'domain', 'domains'}:
-      if entityType == Ent.DOMAIN:
-        entityList = getEntityList(Cmd.OB_DOMAIN_NAME_ENTITY)
-      else:
-        domains = getEntityList(Cmd.OB_DOMAIN_NAME_ENTITY)
-        domainLists = domains if isinstance(domains, dict) else None
-    elif myarg == 'includeallsites':
-      includeAllSites = 'true'
-    elif myarg == 'maxresults':
-      url_params['max-results'] = getInteger(minVal=1)
-    elif myarg == 'startindex':
-      url_params['start-index'] = getInteger(minVal=1)
-    elif myarg == 'withmappings':
-      url_params['with-mappings'] = 'true'
-    elif myarg in {'role', 'roles'}:
-      roles = getACLRoles(SITE_ACL_ROLES_MAP)
-    elif myarg in {'convertcrnl', 'converttextnl', 'convertsummarynl'}:
-      convertCRNL = True
-    elif myarg == 'delimiter':
-      delimiter = getCharacter()
-    else:
-      unknownArgumentExit()
-  sitesManager = SitesManager()
-  sitesSet = set()
-  i, count, entityList = getEntityArgument(entityList)
-  if entityType == Ent.USER:
-    for user in entityList:
-      i += 1
-      if domainLists:
-        domainList = domainLists[user]
-      elif domains:
-        domainList = domains
-      else:
-        _, domain = splitEmailAddress(user)
-        domainList = [domain]
-      user, sitesObject = getSitesObject(entityType, user, i, count)
-      if not sitesObject:
-        continue
-      jcount = len(domainList)
-      j = 0
-      for domain in domainList:
-        j += 1
-        if domain != 'site':
-          url_params['include-all-sites'] = includeAllSites
-        else:
-          url_params.pop('include-all-sites', None)
-        printGettingAllEntityItemsForWhom(Ent.SITE, f'{Ent.Singular(Ent.USER)}: {user}, {Ent.Singular(Ent.DOMAIN)}: {domain}')
-        sites = _getSites(domain, i, count)
-        if not csvPF:
-          _showSites(domain, j, jcount, domain, sites)
-        else:
-          _printSites(user, j, jcount, domain, sites)
-  else:
-    for domain in entityList:
-      i += 1
-      domain, sitesObject = getSitesObject(entityType, domain, i, count)
-      if not sitesObject:
-        continue
-      if domain != 'site':
-        url_params['include-all-sites'] = includeAllSites
-      else:
-        url_params.pop('include-all-sites', None)
-      printGettingAllEntityItemsForWhom(Ent.SITE, f'{Ent.Singular(Ent.DOMAIN)}: {domain}')
-      sites = _getSites(domain, i, count)
-      if not csvPF:
-        _showSites(domain, i, count, domain, sites)
-      else:
-        _printSites(domain, i, count, domain, sites)
-  if csvPF:
-    csvPF.SortTitles()
-    csvPF.SetSortTitles([])
-    if roles:
-      csvPF.MoveTitlesToEnd(['Scope', 'Role'])
-    csvPF.writeCSVfile('Sites')
-
-# gam print sites [todrive <ToDriveAttribute>*] [domain|domains <DomainNameEntity>] [includeallsites]
-#	[withmappings] [role|roles all|<SiteACLRoleList>] [startindex <Number>] [maxresults <Number>] [convertcrnl] [delimiter <Character>]
-# gam show sites [domain|domains <DomainNameEntity>] [includeallsites]
-#	[withmappings] [role|roles all|<SiteACLRoleList>] [startindex <Number>] [maxresults <Number>] [convertcrnl]
-def doPrintShowDomainSites():
-  printShowSites([GC.Values[GC.DOMAIN]], Ent.DOMAIN)
-
 # gam [<UserTypeEntity>] print sites [todrive <ToDriveAttribute>*] [domain|domains <DomainNameEntity>] [includeallsites]
 #	[withmappings] [role|roles all|<SiteACLRoleList>] [startindex <Number>] [maxresults <Number>] [convertcrnl] [delimiter <Character>]
 # gam [<UserTypeEntity>] show sites [domain|domains <DomainNameEntity>] [includeallsites]
 #	[withmappings] [role|roles all|<SiteACLRoleList>] [startindex <Number>] [maxresults <Number>] [convertcrnl]
-def printShowUserSites(users):
-  printShowSites(users, Ent.USER)
-
-SITE_ACTION_TO_MODIFIER_MAP = {
-  Act.ADD: Act.MODIFIER_TO,
-  Act.UPDATE: Act.MODIFIER_IN,
-  Act.DELETE: Act.MODIFIER_FROM,
-  Act.INFO: Act.MODIFIER_FROM,
-  Act.PRINT: Act.MODIFIER_FROM,
-  Act.SHOW: Act.MODIFIER_FROM,
-  }
-
-def _processSiteACLs(users, entityType):
-  action = Act.Get()
-  siteEntity = getSiteEntity()
-  csvPF = None
-  if action in [Act.ADD, Act.UPDATE]:
-    role = getChoice(SITE_ACL_ROLES_MAP, mapChoice=True)
-  elif action == Act.PRINT:
-    csvPF = CSVPrintFile([Ent.Singular(entityType), SITE_SITE, 'Scope', 'Role'])
-  else:
-    role = None
-  actionPrintShow = action in [Act.PRINT, Act.SHOW]
-  ACLScopeEntity = getCalendarSiteACLScopeEntity() if not actionPrintShow else {}
-  getTodriveOnly(csvPF)
-  modifier = SITE_ACTION_TO_MODIFIER_MAP[action]
-  sitesManager = SitesManager()
-  i, count, users = getEntityArgument(users)
-  for user in users:
-    i += 1
-    origUser = user
-    user, sitesObject, sites, jcount = _validateUserGetSites(entityType, user, i, count, siteEntity, Ent.SITE_ACL, modifier)
-    if jcount == 0:
-      continue
-    Ind.Increment()
-    j = 0
-    for site in sites:
-      j += 1
-      domain, site, domainSite, ruleIds, kcount = _validateSiteGetRuleIds(origUser, site, j, jcount, ACLScopeEntity, showAction=not actionPrintShow)
-      if not domainSite:
-        continue
-      if not actionPrintShow:
-        Ind.Increment()
-        k = 0
-        for ruleId in ruleIds:
-          k += 1
-          ruleId = normalizeRuleId(ruleId)
-          try:
-            if action in [Act.CREATE, Act.ADD]:
-              acl = callGData(sitesObject, 'CreateAclEntry',
-                              throwErrors=[GDATA.NOT_FOUND, GDATA.ENTITY_EXISTS, GDATA.BAD_REQUEST, GDATA.FORBIDDEN],
-                              retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                              aclentry=sitesManager.FieldsToAclEntry(makeRoleRuleIdBody(role, ruleId)), domain=domain, site=site)
-              fields = sitesManager.AclEntryToFields(acl)
-              if not fields.get('inviteLink'):
-                entityActionPerformed([Ent.SITE, domainSite, Ent.SITE_ACL, formatACLRule(fields)], k, kcount)
-              else:
-                entityActionPerformed([Ent.SITE, domainSite, Ent.SITE_ACL, f'{formatACLRule(fields)} (Link: {fields["inviteLink"]})'], k, kcount)
-            elif action == Act.UPDATE:
-              acl = callGData(sitesObject, 'GetAclEntry',
-                              throwErrors=[GDATA.NOT_FOUND, GDATA.BAD_REQUEST, GDATA.FORBIDDEN],
-                              retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                              domain=domain, site=site, ruleId=ruleId)
-              acl.role.value = role
-              acl = callGData(sitesObject, 'UpdateAclEntry',
-                              throwErrors=[GDATA.NOT_FOUND, GDATA.BAD_REQUEST, GDATA.FORBIDDEN],
-                              retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                              aclentry=acl, domain=domain, site=site, ruleId=ruleId, extra_headers={'If-Match': acl.etag})
-              fields = sitesManager.AclEntryToFields(acl)
-              entityActionPerformed([Ent.SITE, domainSite, Ent.SITE_ACL, formatACLRule(fields)], k, kcount)
-            elif action == Act.DELETE:
-              acl = callGData(sitesObject, 'GetAclEntry',
-                              throwErrors=[GDATA.NOT_FOUND, GDATA.BAD_REQUEST, GDATA.FORBIDDEN],
-                              retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                              domain=domain, site=site, ruleId=ruleId)
-              callGData(sitesObject, 'DeleteAclEntry',
-                        throwErrors=[GDATA.NOT_FOUND, GDATA.BAD_REQUEST, GDATA.FORBIDDEN],
-                        retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                        domain=domain, site=site, ruleId=ruleId, extra_headers={'If-Match': acl.etag})
-              entityActionPerformed([Ent.SITE, domainSite, Ent.SITE_ACL, formatACLScopeRole(ruleId, None)], k, kcount)
-            elif action == Act.INFO:
-              acl = callGData(sitesObject, 'GetAclEntry',
-                              throwErrors=[GDATA.NOT_FOUND, GDATA.BAD_REQUEST, GDATA.FORBIDDEN],
-                              retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                              domain=domain, site=site, ruleId=ruleId)
-              fields = sitesManager.AclEntryToFields(acl)
-              printEntity([Ent.SITE, domainSite, Ent.SITE_ACL, formatACLRule(fields)], k, kcount)
-          except GDATA.notFound as e:
-            if not checkSiteExists(sitesObject, domain, site):
-              entityUnknownWarning(Ent.SITE, domainSite, j, jcount)
-              break
-            entityActionFailedWarning([Ent.SITE, domainSite, Ent.SITE_ACL, formatACLScopeRole(ruleId, role)], str(e), k, kcount)
-          except (GDATA.entityExists, GDATA.badRequest, GDATA.forbidden) as e:
-            entityActionFailedWarning([Ent.SITE, domainSite, Ent.SITE_ACL, formatACLScopeRole(ruleId, role)], str(e), k, kcount)
-        Ind.Decrement()
-      else:
-        try:
-          acls = callGDataPages(sitesObject, 'GetAclFeed',
-                                throwErrors=[GDATA.NOT_FOUND, GDATA.FORBIDDEN],
-                                retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                                domain=domain, site=site)
-          if not csvPF:
-            kcount = len(acls)
-            entityPerformActionNumItems([Ent.SITE, domainSite], kcount, Ent.SITE_ACL, j, jcount)
-            if kcount == 0:
-              continue
-            Ind.Increment()
-            k = 0
-            for acl in acls:
-              k += 1
-              fields = sitesManager.AclEntryToFields(acl)
-              printEntity([Ent.SITE, domainSite, Ent.SITE_ACL, formatACLRule(fields)], k, kcount)
-            Ind.Decrement()
-          else:
-            siteRow = {Ent.Singular(entityType): user, SITE_SITE: domainSite}
-            for acl in acls:
-              fields = sitesManager.AclEntryToFields(acl)
-              siteACLRow = siteRow.copy()
-              siteACLRow.update(ACLRuleDict(fields))
-              csvPF.WriteRowTitles(siteACLRow)
-        except GDATA.notFound:
-          entityUnknownWarning(Ent.SITE, domainSite, j, jcount)
-        except GDATA.forbidden as e:
-          entityActionFailedWarning([Ent.SITE, domainSite], str(e), j, jcount)
-    Ind.Decrement()
-  if csvPF:
-    csvPF.writeCSVfile('Site ACLs')
-
 # gam [<UserTypeEntity>] create siteacls <SiteEntity> <SiteACLRole> <SiteACLScopeEntity>
 # gam [<UserTypeEntity>] update siteacls <SiteEntity> <SiteACLRole> <SiteACLScopeEntity>
 # gam [<UserTypeEntity>] delete siteacls <SiteEntity> <SiteACLScopeEntity>
 # gam [<UserTypeEntity>] info siteacls <SiteEntity> <SiteACLScopeEntity>
 # gam [<UserTypeEntity>] show siteacls <SiteEntity>
 # gam [<UserTypeEntity>] print siteacls <SiteEntity> [todrive <ToDriveAttribute>*]
-def processUserSiteACLs(users):
-  _processSiteACLs(users, Ent.USER)
-
-def doProcessDomainSiteACLs():
-  _processSiteACLs([GC.Values[GC.DOMAIN]], Ent.DOMAIN)
-
-def _printSiteActivity(users, entityType):
-  sitesManager = SitesManager()
-  url_params = {}
-  csvPF = CSVPrintFile([SITE_SITE, SITE_SUMMARY, SITE_UPDATED], 'sortall')
-  sites = getEntityList(Cmd.OB_SITE_ENTITY)
-  siteLists = sites if isinstance(sites, dict) else None
-  while Cmd.ArgumentsRemaining():
-    myarg = getArgument()
-    if myarg == 'todrive':
-      csvPF.GetTodriveParameters()
-    elif myarg == 'maxresults':
-      url_params['max-results'] = getInteger(minVal=1)
-    elif myarg == 'startindex':
-      url_params['start-index'] = getInteger(minVal=1)
-    elif myarg == 'updatedmin':
-      url_params['updated-min'] = getYYYYMMDD()
-    elif myarg == 'updatedmax':
-      url_params['updated-max'] = getYYYYMMDD()
-    else:
-      unknownArgumentExit()
-  i, count, users = getEntityArgument(users)
-  for user in users:
-    i += 1
-    if siteLists:
-      sites = siteLists[user]
-    user, sitesObject = getSitesObject(entityType, user, i, count)
-    if not sitesObject:
-      continue
-    jcount = len(sites)
-    if jcount == 0:
-      setSysExitRC(NO_ENTITIES_FOUND_RC)
-      continue
-    Ind.Increment()
-    j = 0
-    for site in sites:
-      j += 1
-      domain, site, domainSite = _validateSite(site, j, jcount)
-      if not domainSite:
-        continue
-      printGettingAllEntityItemsForWhom(Ent.ACTIVITY, domainSite)
-      try:
-        activities = callGDataPages(sitesObject, 'GetActivityFeed',
-                                    pageMessage=getPageMessageForWhom(),
-                                    throwErrors=[GDATA.NOT_FOUND, GDATA.FORBIDDEN],
-                                    retryErrors=[GDATA.INTERNAL_SERVER_ERROR],
-                                    domain=domain, site=site, url_params=url_params)
-        for activity in activities:
-          fields = sitesManager.ActivityEntryToFields(activity)
-          activityRow = {SITE_SITE: domainSite}
-          for key, value in iter(fields.items()):
-            if not isinstance(value, list):
-              activityRow[key] = value
-            else:
-              activityRow[key] = ','.join(value)
-          csvPF.WriteRowTitles(activityRow)
-      except GDATA.notFound:
-        entityUnknownWarning(Ent.SITE, domainSite, j, jcount)
-      except GDATA.forbidden as e:
-        entityActionFailedWarning([Ent.SITE, domainSite], str(e), j, jcount)
-  csvPF.writeCSVfile('Site Activities')
-
 # gam [<UserTypeEntity>] print siteactivity <SiteEntity> [todrive <ToDriveAttribute>*]
 #	[startindex <Number>] [maxresults <Number>] [updated_min <Date>] [updated_max <Date>]
-def printUserSiteActivity(users):
-  _printSiteActivity(users, Ent.USER)
+def deprecatedUserSites(_):
+  deprecatedCommandExit()
 
-def doPrintDomainSiteActivity():
-  _printSiteActivity([GC.Values[GC.DOMAIN]], Ent.DOMAIN)
+def deprecatedDomainSites():
+  deprecatedCommandExit()
 
 # <CSVFileInput> [keyfield <FieldName>] [datafield <FieldName>]
 def _getGroupOrgUnitMap():
@@ -42981,6 +42428,8 @@ class PasswordOptions():
     self.makeCleanPassword = True
     self.cleanPasswordLen = 25
     self.randomPasswordChars = None
+    self.promptForPassword = False
+    self.promptForUniquePassword = False
     self.notifyPasswordSet = False
     self.updateCmd = updateCmd
     self.filename = ''
@@ -43027,7 +42476,7 @@ class PasswordOptions():
           self.makeCleanPassword = True
           notFoundBody[up] = self.CreateRandomPassword()
           self.notFoundPassword = notFoundBody[up]
-    elif myarg == 'lograndompassword':
+    elif myarg in {'lograndompassword', 'logpassword'}:
       self.filename = getString(Cmd.OB_FILE_NAME)
     else:
       return False
@@ -43048,7 +42497,8 @@ class PasswordOptions():
       password = self.GetPassword()
       if password:
         body[up] = password
-        self.makeRandomPassword = self.makeUniqueRandomPassword = False
+        self.makeRandomPassword = self.makeUniqueRandomPassword =\
+          self.promptForPassword = self.promptForUniquePassword = False
         if password.lower() == 'blocklogin':
           self.makeRandomPassword = True
           self.makeCleanPassword = False
@@ -43061,6 +42511,13 @@ class PasswordOptions():
             self.makeUniqueRandomPassword = self.makeCleanPassword = True
           else:
             self.makeRandomPassword = self.makeCleanPassword = True
+        elif password.lower() == 'prompt':
+          self.promptForPassword = True
+        elif password.lower() == 'uniqueprompt':
+          if self.updateCmd:
+            self.promptForUniquePassword = True
+          else:
+            self.promptForPassword = True
     elif up == 'hashFunction':
       body[up] = self.HASH_FUNCTION_MAP[myarg]
       self.clearPassword = self.hashPassword = False
@@ -43083,10 +42540,16 @@ class PasswordOptions():
       except Exception:
         pass
 
-  def AssignPassword(self, body, notify, notFoundBody, createIfNotFound):
+  def AssignPassword(self, body, notify, notFoundBody, createIfNotFound, user=None):
     up = 'password'
     if self.makeRandomPassword or self.makeUniqueRandomPassword:
       body[up] = self.CreateRandomPassword()
+      self.password = body[up]
+    elif user and (self.promptForPassword or self.promptForUniquePassword):
+      body[up] = readStdin(f'Enter password for {user}: ')
+      self.password = body[up]
+    elif self.promptForPassword:
+      body[up] = readStdin('Enter password: ')
       self.password = body[up]
     if up in body:
       self.FinalizePassword(body, notify, up)
@@ -43721,7 +43184,12 @@ def getUserAttributes(cd, updateCmd, noUid=False):
           body[up][schemaName][fieldName] = None
     else:
       unknownArgumentExit()
-  if not PwdOpts.makeUniqueRandomPassword:
+  if PwdOpts.promptForPassword or PwdOpts.promptForUniquePassword:
+    if not updateCmd:
+      PwdOpts.AssignPassword(body, notify, notFoundBody, parameters['createIfNotFound'], body['primaryEmail'])
+    elif not PwdOpts.promptForUniquePassword:
+      PwdOpts.AssignPassword(body, notify, notFoundBody, parameters['createIfNotFound'])
+  elif not PwdOpts.makeUniqueRandomPassword:
     PwdOpts.AssignPassword(body, notify, notFoundBody, parameters['createIfNotFound'])
   return (body, notify, tagReplacements, addGroups, addAliases, PwdOpts,
           updatePrimaryEmail, notFoundBody, groupOrgUnitMap, parameters,
@@ -43755,7 +43223,7 @@ def createUserAddAliases(cd, user, aliasList, i, count):
 #	    [replyto <EmailAaddress>]
 #	    [<NotifyMessageContent>]
 #	    (replace <Tag> <UserReplacement>)*]
-#	[lograndompassword <FileName>] [ignorenullpassword]
+#	[logpassword <FileName>] [ignorenullpassword]
 #	[verifynotinvitable]
 #	[addnumericsuffixonduplicate <Number>]
 def doCreateUser():
@@ -43860,7 +43328,7 @@ def verifyUserPrimaryEmail(cd, user, createIfNotFound, i, count):
 #	    [<NotifyMessageContent>]
 #	    (replace <Tag> <UserReplacement>)*]
 #	[notifyonupdate [<Boolean>]]
-#	[lograndompassword <FileName>] [ignorenullpassword]
+#	[logpassword <FileName>] [ignorenullpassword]
 def updateUsers(entityList):
   def waitingForCreationToComplete(sleep_time):
     writeStderr(Ind.Spaces()+Msg.WAITING_FOR_ITEM_CREATION_TO_COMPLETE_SLEEPING.format(Ent.Singular(Ent.USER), sleep_time))
@@ -43942,8 +43410,8 @@ def updateUsers(entityList):
           if isInvitableUser:
             entityActionNotPerformedWarning([Ent.USER, body['primaryEmail']], Msg.EMAIL_ADDRESS_IS_UNMANAGED_ACCOUNT, i, count)
             continue
-        if PwdOpts.makeUniqueRandomPassword:
-          PwdOpts.AssignPassword(body, notify, notFoundBody, parameters['createIfNotFound'])
+        if PwdOpts.makeUniqueRandomPassword or PwdOpts.promptForUniquePassword:
+          PwdOpts.AssignPassword(body, notify, notFoundBody, parameters['createIfNotFound'], userKey)
         retry = 0
         while True:
           try:
@@ -44120,14 +43588,16 @@ def undeleteUsers(entityList):
       callGAPI(cd.users(), 'undelete',
                throwReasons=[GAPI.DELETED_USER_NOT_FOUND, GAPI.INVALID_ORGUNIT,
                              GAPI.DOMAIN_NOT_FOUND, GAPI.DOMAIN_CANNOT_USE_APIS,
-                             GAPI.FORBIDDEN, GAPI.BAD_REQUEST, GAPI.INVALID, GAPI.DUPLICATE],
+                             GAPI.FORBIDDEN, GAPI.BAD_REQUEST, GAPI.INVALID, GAPI.DUPLICATE,
+                             GAPI.LIMIT_EXCEEDED],
                userKey=user_uid, body={'orgUnitPath': makeOrgUnitPathAbsolute(orgUnitPaths[0])})
       entityActionPerformed([Ent.DELETED_USER, user], i, count)
     except GAPI.deletedUserNotFound:
       entityUnknownWarning(Ent.DELETED_USER, user, i, count)
     except GAPI.invalidOrgunit:
       entityActionFailedWarning([Ent.USER, user], Msg.INVALID_ORGUNIT, i, count)
-    except (GAPI.domainNotFound, GAPI.domainCannotUseApis, GAPI.forbidden, GAPI.badRequest, GAPI.invalid, GAPI.duplicate) as e:
+    except (GAPI.domainNotFound, GAPI.domainCannotUseApis, GAPI.forbidden, GAPI.badRequest,
+            GAPI.invalid, GAPI.duplicate, GAPI.limitExceeded) as e:
       entityActionFailedWarning([Ent.USER, user], str(e), i, count)
 
 # gam undelete users <UserEntity> [ou|org|orgunit <OrgUnitPath>]
@@ -44253,7 +43723,7 @@ def waitForMailbox(entityList):
     Ind.Decrement()
 
 def getUserLicenses(lic, user, skus):
-  def _callbackGetLicense(request_id, response, exception):
+  def _callbackGetLicense(_, response, exception):
     if exception is None:
       if response and 'skuId' in response:
         licenses.append(response['skuId'])
@@ -45366,7 +44836,7 @@ def doPrintUsers(entityList=None):
       return
     sortRows = True
 # If no individual fields were specified (allfields, basic, full) or individual fields other than primaryEmail were specified, look up each user
-    if isSuspended is not None:
+    if isSuspended is not None and fieldsList:
       fieldsList.append('suspended')
     if projectionSet or len(set(fieldsList)) > 1 or showValidColumn:
       jcount = len(entityList)
@@ -48190,7 +47660,7 @@ def doPrintCourseTopics():
       jcount = len(courseTopicIds)
       if jcount == 0:
         continue
-      fields = f'{",".join(set(fieldsList))}'
+      fields = getFieldsFromFieldsList(fieldsList)
       j = 0
       for courseTopicId in courseTopicIds:
         j += 1
@@ -48425,7 +47895,7 @@ def doPrintCourseWM(entityIDType, entityStateType):
       jcount = len(courseWMIds)
       if jcount == 0:
         continue
-      fields = f'{",".join(set(fieldsList))}' if fieldsList else None
+      fields = getFieldsFromFieldsList(fieldsList)
       j = 0
       for courseWMId in courseWMIds:
         j += 1
@@ -48759,7 +48229,7 @@ def _batchAddItemsToCourse(croom, courseId, i, count, addParticipants, role):
   _ADD_PART_REASON_TO_MESSAGE_MAP = {GAPI.NOT_FOUND: Msg.DOES_NOT_EXIST,
                                      GAPI.ALREADY_EXISTS: Msg.DUPLICATE,
                                      GAPI.FAILED_PRECONDITION: Msg.NOT_ALLOWED}
-  def _callbackAddItemsToCourse(request_id, response, exception):
+  def _callbackAddItemsToCourse(request_id, _, exception):
     ri = request_id.splitlines()
     if exception is None:
       entityActionPerformed([Ent.COURSE, ri[RI_ENTITY], ri[RI_ROLE], ri[RI_ITEM]], int(ri[RI_J]), int(ri[RI_JCOUNT]))
@@ -48839,7 +48309,7 @@ def _batchRemoveItemsFromCourse(croom, courseId, i, count, removeParticipants, r
   _REMOVE_PART_REASON_TO_MESSAGE_MAP = {GAPI.NOT_FOUND: Msg.DOES_NOT_EXIST,
                                         GAPI.FORBIDDEN: Msg.FORBIDDEN,
                                         GAPI.PERMISSION_DENIED: Msg.PERMISSION_DENIED}
-  def _callbackRemoveItemsFromCourse(request_id, response, exception):
+  def _callbackRemoveItemsFromCourse(request_id, _, exception):
     ri = request_id.splitlines()
     if exception is None:
       entityActionPerformed([Ent.COURSE, ri[RI_ENTITY], ri[RI_ROLE], ri[RI_ITEM]], int(ri[RI_J]), int(ri[RI_JCOUNT]))
@@ -49051,7 +48521,7 @@ def doCourseRemoveItems(courseIdList, getEntityListArg):
 
 # gam courses <CourseEntity> clear teachers|students
 # gam course <CourseID> clear teacher|student
-def doCourseClearParticipants(courseIdList, getEntityListArg):
+def doCourseClearParticipants(courseIdList, _):
   croom = buildGAPIObject(API.CLASSROOM)
   role = getChoice(CLEAR_SYNC_PARTICIPANT_TYPES_MAP, mapChoice=True)
   checkForExtraneousArguments()
@@ -49067,7 +48537,7 @@ def doCourseClearParticipants(courseIdList, getEntityListArg):
 # gam course <CourseID> sync students [addonly|removeonly] <UserTypeEntity>
 # gam courses <CourseEntity> sync teachers [addonly|removeonly] [makefirstteacherowner] <UserTypeEntity>
 # gam course <CourseID> sync teachers [addonly|removeonly] [makefirstteacherowner] <UserTypeEntity>
-def doCourseSyncParticipants(courseIdList, getEntityListArg):
+def doCourseSyncParticipants(courseIdList, _):
   croom = buildGAPIObject(API.CLASSROOM)
   role = getChoice(CLEAR_SYNC_PARTICIPANT_TYPES_MAP, mapChoice=True)
   if role == Ent.TEACHER:
@@ -52720,15 +52190,20 @@ def _convertSharedDriveNameToId(drive, user, i, count, fileIdEntity, useDomainAd
                                                                  ','.join([td['id'] for td in tdlist])), i, count)
   return False
 
-def _getSharedDriveNameFromId(drive, sharedDriveId, useDomainAdminAccess=False):
+def _getSharedDriveNameFromId(sharedDriveId):
   sharedDriveName = GM.Globals[GM.MAP_SHAREDDRIVE_ID_TO_NAME].get(sharedDriveId)
   if not sharedDriveName:
-    try:
-      sharedDriveName = callGAPI(drive.drives(), 'get',
-                                 throwReasons=GAPI.DRIVE_USER_THROW_REASONS+[GAPI.NOT_FOUND],
-                                 useDomainAdminAccess=useDomainAdminAccess,
-                                 driveId=sharedDriveId, fields='name')['name']
-    except (GAPI.notFound, GAPI.serviceNotAvailable, GAPI.authError, GAPI.domainPolicy):
+    if not GM.Globals[GM.ADMIN_DRIVE]:
+      _, GM.Globals[GM.ADMIN_DRIVE] = buildGAPIServiceObject(API.DRIVE3, _getAdminEmail())
+    if GM.Globals[GM.ADMIN_DRIVE]:
+      try:
+        sharedDriveName = callGAPI(GM.Globals[GM.ADMIN_DRIVE].drives(), 'get',
+                                   throwReasons=GAPI.DRIVE_USER_THROW_REASONS+[GAPI.NOT_FOUND],
+                                   useDomainAdminAccess=True,
+                                   driveId=sharedDriveId, fields='name')['name']
+      except (GAPI.notFound, GAPI.serviceNotAvailable, GAPI.authError, GAPI.domainPolicy):
+        sharedDriveName = TEAM_DRIVE
+    else:
       sharedDriveName = TEAM_DRIVE
     GM.Globals[GM.MAP_SHAREDDRIVE_ID_TO_NAME][sharedDriveId] = sharedDriveName
   return sharedDriveName
@@ -52741,7 +52216,7 @@ def _getDriveFileNameFromId(drive, fileId, combineTitleId=True, useDomainAdminAc
     if result:
       fileName = result['name']
       if (result['mimeType'] == MIMETYPE_GA_FOLDER) and result.get('driveId') and (result['name'] == TEAM_DRIVE):
-        fileName = _getSharedDriveNameFromId(drive, result['driveId'])
+        fileName = _getSharedDriveNameFromId(result['driveId'])
       if combineTitleId:
         fileName += '('+fileId+')'
       return (fileName, _getEntityMimeType(result), result['mimeType'])
@@ -53823,7 +53298,7 @@ def getFilePaths(drive, fileTree, initialResult, filePathInfo, addParentsToTree=
                  fullpath=False, showDepth=False, folderPathOnly=False):
   def _getParentName(result):
     if (result['mimeType'] == MIMETYPE_GA_FOLDER) and result.get('driveId') and (result['name'] == TEAM_DRIVE):
-      parentName = _getSharedDriveNameFromId(drive, result['driveId'])
+      parentName = _getSharedDriveNameFromId(result['driveId'])
       if parentName != TEAM_DRIVE:
         return f'{SHARED_DRIVES}{filePathInfo["delimiter"]}{parentName}'
     return result['name']
@@ -54522,9 +53997,9 @@ def showFileInfo(users):
         driveId = result.get('driveId')
         if driveId:
           if result['mimeType'] == MIMETYPE_GA_FOLDER and result['name'] == TEAM_DRIVE:
-            result['name'] = _getSharedDriveNameFromId(drive, driveId)
+            result['name'] = _getSharedDriveNameFromId(driveId)
           if DFF.showSharedDriveNames:
-            result['driveName'] = _getSharedDriveNameFromId(drive, driveId)
+            result['driveName'] = _getSharedDriveNameFromId(driveId)
         if showNoParents:
           result.setdefault('parents', [])
         if getPermissionsForSharedDrives and driveId and 'permissions' not in result:
@@ -55212,7 +54687,7 @@ def extendFileTreeParents(drive, fileTree, fields):
           result['parents'] = [ORPHANS] if result.get('ownedByMe', False) and 'sharedWithMeTime' not in result else [SHARED_WITHME]
         else:
           if result['name'] == TEAM_DRIVE:
-            result['name'] = _getSharedDriveNameFromId(drive, result['driveId'])
+            result['name'] = _getSharedDriveNameFromId(result['driveId'])
           result['parents'] = [SHARED_DRIVES] if 'sharedWithMeTime' not in result else [SHARED_WITHME]
       fileTree[fileId]['info'] = result
       fileTree[fileId]['info']['noDisplay'] = True
@@ -55951,7 +55426,7 @@ def printFileList(users):
     if not pmselect and 'permissions' in fileInfo:
       fileInfo['permissions'] = DLP.GetFileMatchingPermission(fileInfo)
     if DFF.showSharedDriveNames and driveId:
-      fileInfo['driveName'] = _getSharedDriveNameFromId(drive, driveId)
+      fileInfo['driveName'] = _getSharedDriveNameFromId(driveId)
     if filepath:
       if not FJQC.formatJSON or not addPathsToJSON:
         addFilePathsToRow(drive, fileTree, fileInfo, filePathInfo, csvPF, row,
@@ -56006,7 +55481,7 @@ def printFileList(users):
     else:
       if not countsRowFilter:
         csvPFco.UpdateMimeTypeCounts(flattenJSON(fileInfo, flattened=row, skipObjects=skipObjects, timeObjects=timeObjects,
-                                                 simpleLists=simpleLists, delimiter=delimiter), mimeTypeInfo)
+                                                 simpleLists=simpleLists, delimiter=delimiter), mimeTypeInfo, sizeField)
       else:
         mimeTypeInfo.setdefault(fileInfo['mimeType'], {'count': 0, 'size': 0})
         mimeTypeInfo[fileInfo['mimeType']]['count'] += 1
@@ -56827,7 +56302,7 @@ def printShowFilePaths(users):
         driveId = result.get('driveId')
         if driveId:
           if result['mimeType'] == MIMETYPE_GA_FOLDER and result['name'] == TEAM_DRIVE:
-            result['name'] = _getSharedDriveNameFromId(drive, driveId)
+            result['name'] = _getSharedDriveNameFromId(driveId)
             if returnPathOnly:
               if fullpath:
                 writeStdout(f'{SHARED_DRIVES}/{result["name"]}\n')
@@ -56917,7 +56392,7 @@ def printFileParentTree(users):
               driveId = result.get('driveId')
               if driveId:
                 if result['mimeType'] == MIMETYPE_GA_FOLDER and result['name'] == TEAM_DRIVE:
-                  result['name'] = _getSharedDriveNameFromId(drive, driveId)
+                  result['name'] = _getSharedDriveNameFromId(driveId)
                   result['isRoot'] = True
             result['parents'] = ['']
             fileList.append(result)
@@ -57115,10 +56590,7 @@ def printShowFileCounts(users):
     if not drive:
       continue
     sharedDriveId = fileIdEntity.get('shareddrive', {}).get('driveId', '')
-    if sharedDriveId:
-      sharedDriveName = _getSharedDriveNameFromId(drive, sharedDriveId)
-    else:
-      sharedDriveName = ''
+    sharedDriveName = _getSharedDriveNameFromId(sharedDriveId) if sharedDriveId else ''
     mimeTypeInfo = {}
     userLastModification = {
       'lastModifiedFileId': '', 'lastModifiedFileName': '',
@@ -57347,7 +56819,7 @@ def printDiskUsage(users):
           includeOwner = False
           csvPF.RemoveTitles(['Owner', 'ownedByMe'])
           if topFolder['name'] == TEAM_DRIVE and not topFolder.get('parents'):
-            topFolder['name'] = _getSharedDriveNameFromId(drive, driveId)
+            topFolder['name'] = _getSharedDriveNameFromId(driveId)
             topFolder['path'] = f'{SHARED_DRIVES}{pathDelimiter}{topFolder["name"]}'
           else:
             topFolder['path'] = topFolder['name']
@@ -58801,6 +58273,7 @@ def initCopyMoveOptions(copyCmd):
     'showPermissionMessages': False,
     'sendEmailIfRequired': False,
     'useDomainAdminAccess': False,
+    'enforceExpansiveAccess': False,
     'copiedShortcutsPointToCopiedFiles': True,
     'createShortcutsForNonmovableFiles': False,
     'duplicateFiles': DUPLICATE_FILE_OVERWRITE_OLDER,
@@ -58832,6 +58305,8 @@ def initCopyMoveOptions(copyCmd):
     'fileMimeTypes': set(),
     'notMimeTypes': False,
     'copySubFilesOwnedBy': None,
+    'copyPermissionRoles': set(DRIVEFILE_ACL_ROLES_MAP.values()),
+    'copyPermissionTypes': set(DRIVEFILE_ACL_PERMISSION_TYPES),
     }
 
 DUPLICATE_FILE_CHOICES = {
@@ -58897,6 +58372,8 @@ def getCopyMoveOptions(myarg, copyMoveOptions):
   elif myarg == 'mappermissionsdomain':
     oldDomain = getString(Cmd.OB_DOMAIN_NAME).lower()
     copyMoveOptions['mapPermissionsDomains'][oldDomain] = getString(Cmd.OB_DOMAIN_NAME).lower()
+  elif myarg == 'enforceexpansiveaccess':
+    copyMoveOptions['enforceExpansiveAccess'] = getBoolean()
   else:
 # Move arguments
     if not copyMoveOptions['copyCmd']:
@@ -58920,6 +58397,20 @@ def getCopyMoveOptions(myarg, copyMoveOptions):
         copyMoveOptions['copyFileInheritedPermissions'] = getBoolean()
       elif myarg == 'copyfilenoninheritedpermissions':
         copyMoveOptions['copyFileNonInheritedPermissions'] = COPY_NONINHERITED_PERMISSIONS_ALWAYS if getBoolean() else COPY_NONINHERITED_PERMISSIONS_NEVER
+      elif myarg == 'copypermissionroles':
+        copyMoveOptions['copyPermissionRoles'] = set()
+        for prole in getString(Cmd.OB_PERMISSION_ROLE_LIST).lower().replace(',', ' ').split():
+          if prole in DRIVEFILE_ACL_ROLES_MAP:
+            copyMoveOptions['copyPermissionRoles'].add(DRIVEFILE_ACL_ROLES_MAP[prole])
+          else:
+            invalidChoiceExit(prole, DRIVEFILE_ACL_ROLES_MAP, True)
+      elif myarg == 'copypermissiontypes':
+        copyMoveOptions['copyPermissionTypes'] = set()
+        for ptype in getString(Cmd.OB_PERMISSION_TYPE_LIST).lower().replace(',', ' ').split():
+          if ptype in DRIVEFILE_ACL_PERMISSION_TYPES:
+            copyMoveOptions['copyPermissionTypes'].add(ptype)
+          else:
+            invalidChoiceExit(ptype, DRIVEFILE_ACL_PERMISSION_TYPES, True)
       elif myarg == 'copysheetprotectedranges':
         if getBoolean():
           copyMoveOptions['copySheetProtectedRangesInheritedPermissions'] = True
@@ -59033,15 +58524,20 @@ def _copyPermissions(drive, user, i, count, j, jcount,
   def isPermissionCopyable(kvList, permission):
     role = permission['role']
     emailAddress = permission.get('emailAddress', '')
+    permissionType = permission['type']
     domain = ''
     if copyMoveOptions['excludePermissionsFromDomains'] or copyMoveOptions['includePermissionsFromDomains']:
-      if permission['type'] in {'group', 'user'}:
+      if permissionType in {'group', 'user'}:
         atLoc = emailAddress.find('@')
         if atLoc > 0:
           domain = emailAddress[atLoc+1:]
-      elif permission['type'] == 'domain':
+      elif permissionType == 'domain':
         domain = permission.get('domain', '')
-    if permission['inherited'] and not copyMoveOptions[copyInherited]:
+    if role not in copyMoveOptions['copyPermissionRoles']:
+      notCopiedMessage = f'role {role} not selected'
+    elif permissionType not in copyMoveOptions['copyPermissionTypes']:
+      notCopiedMessage = f'type {permissionType} not selected'
+    elif permission['inherited'] and not copyMoveOptions[copyInherited]:
       notCopiedMessage = 'inherited not selected'
     elif not permission['inherited'] and copyMoveOptions[copyNonInherited] == COPY_NONINHERITED_PERMISSIONS_NEVER:
       notCopiedMessage = 'noninherited not selected'
@@ -59057,8 +58553,8 @@ def _copyPermissions(drive, user, i, count, j, jcount,
       notCopiedMessage = f'domain {domain} excluded'
     elif domain and copyMoveOptions['includePermissionsFromDomains'] and domain not in copyMoveOptions['includePermissionsFromDomains']:
       notCopiedMessage = f'domain {domain} not included'
-    elif permission.pop('deleted', False):
-      notCopiedMessage = f"{permission['type']} {permission['emailAddress']} deleted"
+    elif permission.pop('deleted', False) or (permissionType in {'group', 'user'} and not emailAddress):
+      notCopiedMessage = f"{permissionType} deleted or has blank email address"
     elif ((copyInherited == 'copySheetProtectedRangesInheritedPermissions' and copyMoveOptions[copyInherited]) or
           (copyNonInherited == 'copySheetProtectedRangesNonInheritedPermissions' and
            copyMoveOptions[copyNonInherited] != COPY_NONINHERITED_PERMISSIONS_NEVER)):
@@ -59149,6 +58645,9 @@ def _copyPermissions(drive, user, i, count, j, jcount,
         updateTargetPerms[permissionId].update(updatePerm)
         updateTargetPerms[permissionId]['updates'] = updatePerm
       copySourcePerms.pop(permissionId)
+  deleteUpdateKwargs = {'useDomainAdminAccess': copyMoveOptions['useDomainAdminAccess']}
+  if entityType != Ent.SHAREDDRIVE:
+    deleteUpdateKwargs['enforceExpansiveAccess'] = copyMoveOptions['enforceExpansiveAccess']
   Ind.Increment()
   action = Act.Get()
   Act.Set(Act.COPY)
@@ -59167,8 +58666,9 @@ def _copyPermissions(drive, user, i, count, j, jcount,
         callGAPI(drive.permissions(), 'create',
                  throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+GAPI.DRIVE3_CREATE_ACL_THROW_REASONS,
 #                 retryReasons=[GAPI.INVALID_SHARING_REQUEST],
+                 useDomainAdminAccess=copyMoveOptions['useDomainAdminAccess'],
                  fileId=newFileId, sendNotificationEmail=sendNotificationEmail, emailMessage=None,
-                 body=permission, fields='', useDomainAdminAccess=copyMoveOptions['useDomainAdminAccess'], supportsAllDrives=True)
+                 body=permission, fields='', supportsAllDrives=True)
         if copyMoveOptions['showPermissionMessages']:
           entityActionPerformed(kvList, k, kcount)
         break
@@ -59206,7 +58706,8 @@ def _copyPermissions(drive, user, i, count, j, jcount,
     try:
       callGAPI(drive.permissions(), 'delete',
                throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+GAPI.DRIVE3_DELETE_ACL_THROW_REASONS+[GAPI.FILE_NEVER_WRITABLE],
-               fileId=newFileId, permissionId=permissionId, useDomainAdminAccess=copyMoveOptions['useDomainAdminAccess'], supportsAllDrives=True)
+               **deleteUpdateKwargs,
+               fileId=newFileId, permissionId=permissionId,  supportsAllDrives=True)
       if copyMoveOptions['showPermissionMessages']:
         entityActionPerformed(kvList, k, kcount)
     except (GAPI.notFound, GAPI.permissionNotFound,
@@ -59231,8 +58732,9 @@ def _copyPermissions(drive, user, i, count, j, jcount,
       callGAPI(drive.permissions(), 'update',
                bailOnInternalError=True,
                throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+GAPI.DRIVE3_UPDATE_ACL_THROW_REASONS+[GAPI.FILE_NEVER_WRITABLE],
-               fileId=newFileId, permissionId=permissionId, removeExpiration=removeExpiration,
-               body=permission['updates'], useDomainAdminAccess=copyMoveOptions['useDomainAdminAccess'], supportsAllDrives=True)
+               removeExpiration=removeExpiration,
+               **deleteUpdateKwargs,
+               fileId=newFileId, permissionId=permissionId, body=permission['updates'], supportsAllDrives=True)
       if copyMoveOptions['showPermissionMessages']:
         entityActionPerformed(kvList, k, kcount)
     except (GAPI.notFound, GAPI.permissionNotFound,
@@ -59391,7 +58893,7 @@ def _getCopyMoveParentInfo(drive, user, i, count, j, jcount, newParentId, statis
         result['destParentType'] = DEST_PARENT_MYDRIVE_FOLDER
     else:
       if result['name'] == TEAM_DRIVE and not result.get('parents', []):
-        result['name'] = _getSharedDriveNameFromId(drive, result['driveId'])
+        result['name'] = _getSharedDriveNameFromId(result['driveId'])
         result['destParentType'] = DEST_PARENT_SHAREDDRIVE_ROOT
       else:
         result['destParentType'] = DEST_PARENT_SHAREDDRIVE_FOLDER
@@ -59496,6 +58998,8 @@ copyReturnItemMap = {
 #	[copysubfolderpermissions [<Boolean>]]
 #	[copysubfolderinheritedpermissions [<Boolean>]]
 #	[copysubfoldernoniheritedpermissions never|always|syncallfolders|syncupdatedfolders]
+#	[copypermissionroles <DriveFileACLRoleList>]
+#	[copypermissiontypes <DriveFileACLTypeList>]
 #	[excludepermissionsfromdomains|includepermissionsfromdomains <DomainNameList>]
 #	(mappermissionsdomain <DomainName> <DomainName>)*
 #	[copysheetprotectedranges [<Boolean>]]
@@ -59504,6 +59008,7 @@ copyReturnItemMap = {
 #	[sendemailifrequired [<Boolean>]]
 #	[suppressnotselectedmessages [<Boolean>]]
 #	[verifyorganizer [<Boolean>]]
+#	[enforceexpansiveaccess [<Boolean>]]
 def copyDriveFile(users):
   def _writeCSVData(user, oldName, oldId, newName, newId, mimeType):
     row = {'User': user, fileNameTitle: oldName, 'id': oldId,
@@ -59935,7 +59440,7 @@ def copyDriveFile(users):
 # Source at root of Shared Drive?
         sourceMimeType = source['mimeType']
         if sourceMimeType == MIMETYPE_GA_FOLDER and source.get('driveId') and source['name'] == TEAM_DRIVE and not source.get('parents', []):
-          source['name'] = _getSharedDriveNameFromId(drive, source['driveId'])
+          source['name'] = _getSharedDriveNameFromId(source['driveId'])
         sourceName = source['name']
         sourceNameId = f"{sourceName}({source['id']})"
         copyMoveOptions['sourceDriveId'] = source.get('driveId')
@@ -60231,7 +59736,9 @@ def _updateMoveFilePermissions(drive, user, i, count,
       try:
         callGAPI(drive.permissions(), 'delete',
                  throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+GAPI.DRIVE3_DELETE_ACL_THROW_REASONS+[GAPI.FILE_NEVER_WRITABLE],
-                 fileId=fileId, permissionId=permissionId, useDomainAdminAccess=copyMoveOptions['useDomainAdminAccess'], supportsAllDrives=True)
+                 useDomainAdminAccess=copyMoveOptions['useDomainAdminAccess'],
+                 enforceExpansiveAccess=copyMoveOptions['enforceExpansiveAccess'],
+                 fileId=fileId, permissionId=permissionId,  supportsAllDrives=True)
         if copyMoveOptions['showPermissionMessages']:
           entityActionPerformed(kvList, k, kcount)
       except (GAPI.notFound, GAPI.permissionNotFound,
@@ -60310,6 +59817,8 @@ def _updateMoveFilePermissions(drive, user, i, count,
 #	[copysubfolderpermissions [<Boolean>]]
 #	[copysubfolderinheritedpermissions [<Boolean>]]
 #	[copysubfoldernoniheritedpermissions never|always|syncallfolders|syncupdatedfolders]
+#	[copypermissionroles <DriveFileACLRoleList>]
+#	[copypermissiontypes <DriveFileACLTypeList>]
 #	[synctopfoldernoniheritedpermissions [<Boolean>]] [syncsubfoldernoninheritedpermissions [<Boolean>]]
 #	[excludepermissionsfromdomains|includepermissionsfromdomains <DomainNameList>]
 #	(mappermissionsdomain <DomainName> <DomainName>)*
@@ -60317,6 +59826,7 @@ def _updateMoveFilePermissions(drive, user, i, count,
 #	[retainsourcefolders [<Boolean>]]
 #	[sendemailifrequired [<Boolean>]]
 #	[verifyorganizer [<Boolean>]]
+#	[enforceexpansiveaccess [<Boolean>]]
 def moveDriveFile(users):
   def _cloneFolderMove(drive, user, i, count, j, jcount,
                        source, targetChildren, newFolderName, newParentId, newParentName, mergeParentModifiedTime,
@@ -60660,9 +60170,8 @@ def moveDriveFile(users):
   parentBody = {}
   parentParms = initDriveFileAttributes()
   copyMoveOptions = initCopyMoveOptions(False)
-  newParentsSpecified = False
+  newParentsSpecified = updateFilePermissions = False
   movedFiles = {}
-  updateFilePermissions = False
   verifyOrganizer = True
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
@@ -60701,7 +60210,7 @@ def moveDriveFile(users):
         if sourceMimeType == MIMETYPE_GA_FOLDER and source['name'] in [MY_DRIVE, TEAM_DRIVE] and not source.get('parents', []):
           copyMoveOptions['sourceIsMyDriveSharedDrive'] = True
           if source.get('driveId'):
-            source['name'] = _getSharedDriveNameFromId(drive, source['driveId'])
+            source['name'] = _getSharedDriveNameFromId(source['driveId'])
         sourceName = source['name']
         sourceNameId = f"{sourceName}({source['id']})"
         copyMoveOptions['sourceDriveId'] = source.get('driveId')
@@ -61551,6 +61060,7 @@ TRANSFER_DRIVEFILE_ACL_ROLES_MAP = {
 #	[nonowner_retainrole reader|commenter|writer|editor|fileorganizer|current|none]
 #	[nonowner_targetrole reader|commenter|writer|editor|fileorganizer|current|none|source]
 #	(orderby <DriveFileOrderByFieldName> [ascending|descending])*
+#	[enforceexpansiveaccess [<Boolean>]]
 #	[preview] [todrive <ToDriveAttribute>*]
 def transferDrive(users):
 
@@ -61737,6 +61247,7 @@ def transferDrive(users):
           callGAPI(sourceDrive.permissions(), 'update',
                    throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+[GAPI.BAD_REQUEST, GAPI.INVALID_OWNERSHIP_TRANSFER,
                                                                  GAPI.PERMISSION_NOT_FOUND, GAPI.SHARING_RATE_LIMIT_EXCEEDED],
+                   enforceExpansiveAccess=enforceExpansiveAccess,
                    fileId=childFileId, permissionId=targetPermissionId,
                    transferOwnership=True, body={'role': 'owner'}, fields='')
           if removeSourceParents:
@@ -61925,6 +61436,7 @@ def transferDrive(users):
           if ownerRetainRoleBody['role'] != 'writer':
             callGAPI(targetDrive.permissions(), 'update',
                      throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+[GAPI.PERMISSION_NOT_FOUND, GAPI.BAD_REQUEST, GAPI.SHARING_RATE_LIMIT_EXCEEDED],
+                     enforceExpansiveAccess=enforceExpansiveAccess,
                      fileId=childFileId, permissionId=sourcePermissionId, body=ownerRetainRoleBody, fields='')
         else:
           callGAPI(targetDrive.permissions(), 'delete',
@@ -61974,6 +61486,7 @@ def transferDrive(users):
           if nonOwnerRetainRoleBody['role'] != 'current':
             callGAPI(ownerDrive.permissions(), 'update',
                      throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+[GAPI.PERMISSION_NOT_FOUND, GAPI.BAD_REQUEST, GAPI.SHARING_RATE_LIMIT_EXCEEDED],
+                     enforceExpansiveAccess=enforceExpansiveAccess,
                      fileId=childFileId, permissionId=sourcePermissionId, body=sourceUpdateRole, fields='')
         else:
           try:
@@ -62134,7 +61647,7 @@ def transferDrive(users):
   targetUserFolderPattern = '#user# old files'
   targetUserOrphansFolderPattern = '#user# orphaned files'
   targetIds = [None, None]
-  createShortcutsForNonmovableFiles = False
+  createShortcutsForNonmovableFiles = enforceExpansiveAccess = False
   mergeWithTarget = False
   thirdPartyOwners = {}
   skipFileIdEntity = initDriveFileEntity()
@@ -62152,6 +61665,8 @@ def transferDrive(users):
         nonOwnerRetainRoleBody['role'] = 'current'
     elif myarg == 'nonownertargetrole':
       nonOwnerTargetRoleBody['role'] = getChoice(TRANSFER_DRIVEFILE_ACL_ROLES_MAP, mapChoice=True)
+    elif myarg == 'enforceexpansiveaccess':
+      enforceExpansiveAccess = getBoolean()
     elif myarg == 'noretentionmessages':
       showRetentionMessages = False
     elif myarg == 'orderby':
@@ -62389,6 +61904,7 @@ def getPermissionIdForEmail(user, i, count, email):
 #	[<DriveFileParentAttribute>] [includetrashed] [norecursion [<Boolean>]]
 #	(orderby <DriveFileOrderByFieldName> [ascending|descending])*
 #	[preview] [filepath] [pathdelimiter <Character>] [buildtree]
+#	[enforceexpansiveaccess [<Boolean>]]
 #	[todrive <ToDriveAttribute>*]
 def transferOwnership(users):
   def _identifyFilesToTransfer(fileEntry):
@@ -62437,7 +61953,7 @@ def transferOwnership(users):
   body = {}
   newOwner = getEmailAddress()
   OBY = OrderBy(DRIVEFILE_ORDERBY_CHOICE_MAP)
-  changeParents = filepath = includeTrashed = noRecursion = False
+  changeParents = enforceExpansiveAccess = filepath = includeTrashed = noRecursion = False
   pathDelimiter = '/'
   csvPF = fileTree = None
   addParents = ''
@@ -62464,6 +61980,8 @@ def transferOwnership(users):
       csvPF.GetTodriveParameters()
     elif getDriveFileParentAttribute(myarg, parentParms):
       changeParents = True
+    elif myarg == 'enforceexpansiveaccess':
+      enforceExpansiveAccess = getBoolean()
     else:
       unknownArgumentExit()
   Act.Set(Act.TRANSFER_OWNERSHIP)
@@ -62581,6 +62099,7 @@ def transferOwnership(users):
                 Act.Set(action)
             callGAPI(drive.permissions(), 'update',
                      throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+[GAPI.PERMISSION_NOT_FOUND],
+                     enforceExpansiveAccess=enforceExpansiveAccess,
                      fileId=xferFileId, permissionId=permissionId, transferOwnership=True, body=body, fields='')
             entityModifierNewValueItemValueListActionPerformed(kvList, Act.MODIFIER_TO, None, [Ent.USER, newOwner], k, kcount)
           else:
@@ -62602,6 +62121,7 @@ def transferOwnership(users):
                      fileId=xferFileId, sendNotificationEmail=False, body=bodyAdd, fields='')
             callGAPI(drive.permissions(), 'update',
                      throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+[GAPI.PERMISSION_NOT_FOUND],
+                     enforceExpansiveAccess=enforceExpansiveAccess,
                      fileId=xferFileId, permissionId=permissionId, transferOwnership=True, body=body, fields='')
             entityModifierNewValueItemValueListActionPerformed(kvList, Act.MODIFIER_TO, None, [Ent.USER, newOwner], k, kcount)
           except GAPI.invalidSharingRequest as e:
@@ -62674,6 +62194,7 @@ def transferOwnership(users):
 #	[keepuser | (retainrole reader|commenter|writer|editor|none)] [noretentionmessages]
 #	(orderby <DriveFileOrderByFieldName> [ascending|descending])*
 #	[preview] [filepath] [pathdelimiter <Character>] [buildtree]
+#	[enforceexpansiveaccess [<Boolean>]]
 #	[todrive <ToDriveAttribute>*]
 def claimOwnership(users):
   def _identifyFilesToClaim(fileEntry):
@@ -62734,6 +62255,7 @@ def claimOwnership(users):
         if sourceRetainRoleBody['role'] != 'writer':
           callGAPI(sourceDrive.permissions(), 'update',
                    throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+[GAPI.PERMISSION_NOT_FOUND, GAPI.BAD_REQUEST],
+                   enforceExpansiveAccess=enforceExpansiveAccess,
                    fileId=ofileId, permissionId=oldOwnerPermissionId, body=sourceRetainRoleBody, fields='')
       else:
         callGAPI(sourceDrive.permissions(), 'delete',
@@ -62757,7 +62279,7 @@ def claimOwnership(users):
   onlyOwners = set()
   skipOwners = set()
   subdomains = []
-  filepath = includeTrashed = False
+  enforceExpansiveAccess = filepath = includeTrashed = False
   pathDelimiter = '/'
   addParents = ''
   parentBody = {}
@@ -62792,6 +62314,8 @@ def claimOwnership(users):
       includeTrashed = True
     elif myarg == 'orderby':
       OBY.GetChoice()
+    elif myarg == 'enforceexpansiveaccess':
+      enforceExpansiveAccess = getBoolean()
     elif myarg == 'restricted':
       bodyShare['copyRequiresWriterPermission'] = getBoolean()
     elif myarg == 'writerscanshare':
@@ -62962,6 +62486,7 @@ def claimOwnership(users):
                     Act.Set(action)
                 callGAPI(sourceDrive.permissions(), 'update',
                          throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+[GAPI.PERMISSION_NOT_FOUND],
+                         enforceExpansiveAccess=enforceExpansiveAccess,
                          fileId=xferFileId, permissionId=permissionId, transferOwnership=True, body=body, fields='')
                 kvList = [Ent.USER, user, entityType, fileDesc]
                 entityModifierNewValueItemValueListActionPerformed(kvList, Act.MODIFIER_FROM, None, [Ent.USER, oldOwner], l, lcount)
@@ -62986,6 +62511,7 @@ def claimOwnership(users):
                          fileId=xferFileId, sendNotificationEmail=False, body=bodyAdd, fields='')
                 callGAPI(sourceDrive.permissions(), 'update',
                          throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+[GAPI.PERMISSION_NOT_FOUND],
+                         enforceExpansiveAccess=enforceExpansiveAccess,
                          fileId=xferFileId, permissionId=permissionId, transferOwnership=True, body=body, fields='')
                 entityModifierNewValueItemValueListActionPerformed(kvList, Act.MODIFIER_FROM, None, [Ent.USER, oldOwner], l, lcount)
                 _processRetainedRole(user, i, count, oldOwner, entityType, xferFileId, fileDesc, l, lcount)
@@ -63126,7 +62652,7 @@ def printEmptyDriveFolders(users):
         fileIdEntity['shareddrive'] = {'driveId': sharedDriveId, 'corpora': 'drive', 'includeItemsFromAllDrives': True, 'supportsAllDrives': True}
         csvPF.AddTitles(['driveId'])
         csvPF.MoveTitlesToEnd(['name'])
-        pathList = [f'{SHARED_DRIVES}/{_getSharedDriveNameFromId(drive, sharedDriveId)}']
+        pathList = [f'{SHARED_DRIVES}/{_getSharedDriveNameFromId(sharedDriveId)}']
       else:
         pathList = [fileEntryInfo['name']]
       mimeType = fileEntryInfo['mimeType']
@@ -63216,7 +62742,7 @@ def deleteEmptyDriveFolders(users):
       if 'driveId' in fileEntryInfo:
         sharedDriveId = fileEntryInfo['driveId']
         fileIdEntity['shareddrive'] = {'driveId': sharedDriveId, 'corpora': 'drive', 'includeItemsFromAllDrives': True, 'supportsAllDrives': True}
-        pathList = [f'{SHARED_DRIVES}/{_getSharedDriveNameFromId(drive, sharedDriveId)}']
+        pathList = [f'{SHARED_DRIVES}/{_getSharedDriveNameFromId(sharedDriveId)}']
       else:
         pathList = [fileEntryInfo['name']]
       mimeType = fileEntryInfo['mimeType']
@@ -63522,11 +63048,12 @@ def doCreateDriveFileACL():
 
 # gam [<UserTypeEntity>] update drivefileacl <DriveFileEntity> <DriveFilePermissionIDorEmail> [asadmin]
 #	(role <DriveFileACLRole>) [expiration <Time>] [removeexpiration [<Boolean>]]
-#	[updatesheetprotectedranges  [<Boolean>]]
+#	[updatesheetprotectedranges [<Boolean>]] [enforceexpansiveaccess [<Boolean>]]
 #	[showtitles] [nodetails|(csv [todrive <ToDriveAttribute>*] [formatjson [quotechar <Character>]])]
 def updateDriveFileACLs(users, useDomainAdminAccess=False):
   fileIdEntity = getDriveFileEntity()
   isEmail, permissionId = getPermissionId()
+  enforceExpansiveAccess = None
   removeExpiration = showTitles = updateSheetProtectedRanges = False
   showDetails = True
   csvPF = None
@@ -63545,6 +63072,8 @@ def updateDriveFileACLs(users, useDomainAdminAccess=False):
       showTitles = True
     elif myarg == 'updatesheetprotectedranges':
       updateSheetProtectedRanges = getBoolean()
+    elif myarg == 'enforceexpansiveaccess':
+      enforceExpansiveAccess = getBoolean()
     elif myarg == 'nodetails':
       showDetails = False
     elif myarg == 'csv':
@@ -63562,6 +63091,9 @@ def updateDriveFileACLs(users, useDomainAdminAccess=False):
   _checkFileIdEntityDomainAccess(fileIdEntity, useDomainAdminAccess)
   if 'role' not in body:
     missingArgumentExit(f'role {formatChoiceList(DRIVEFILE_ACL_ROLES_MAP)}')
+  updateKwargs = {'useDomainAdminAccess': useDomainAdminAccess}
+  if enforceExpansiveAccess is not None:
+    updateKwargs['enforceExpansiveAccess'] = enforceExpansiveAccess
   printKeys, timeObjects = _getDriveFileACLPrintKeysTimeObjects()
   if csvPF and showTitles:
     csvPF.AddTitles(fileNameTitle)
@@ -63599,7 +63131,7 @@ def updateDriveFileACLs(users, useDomainAdminAccess=False):
         permission = callGAPI(drive.permissions(), 'update',
                               bailOnInternalError=True,
                               throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+GAPI.DRIVE3_UPDATE_ACL_THROW_REASONS+[GAPI.FILE_NEVER_WRITABLE],
-                              useDomainAdminAccess=useDomainAdminAccess,
+                              **updateKwargs,
                               fileId=fileId, permissionId=permissionId, removeExpiration=removeExpiration,
                               transferOwnership=body.get('role', '') == 'owner', body=body, fields='*', supportsAllDrives=True)
         if updateSheetProtectedRanges and mimeType == MIMETYPE_GA_SPREADSHEET:
@@ -63695,7 +63227,7 @@ def createDriveFilePermissions(users, useDomainAdminAccess=False):
     except ValueError:
       return None
 
-  def _callbackCreatePermission(request_id, response, exception):
+  def _callbackCreatePermission(request_id, _, exception):
     ri = request_id.splitlines()
     if int(ri[RI_J]) == 1:
       entityPerformActionNumItems([Ent.DRIVE_FILE_OR_FOLDER_ID, ri[RI_ENTITY]], int(ri[RI_JCOUNT]), Ent.PERMITTEE, int(ri[RI_I]), int(ri[RI_COUNT]))
@@ -63843,11 +63375,12 @@ def doCreatePermissions():
   createDriveFilePermissions([_getAdminEmail()], True)
 
 # gam [<UserTypeEntity>] delete drivefileacl <DriveFileEntity> <DriveFilePermissionIDorEmail> [asadmin]
-#	[updatesheetprotectedranges  [<Boolean>]]
+#	[updatesheetprotectedranges  [<Boolean>]] [enforceexpansiveaccess [<Boolean>]]
 #	[showtitles]
 def deleteDriveFileACLs(users, useDomainAdminAccess=False):
   fileIdEntity = getDriveFileEntity()
   isEmail, permissionId = getPermissionId()
+  enforceExpansiveAccess = None
   showTitles = updateSheetProtectedRanges = False
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
@@ -63855,11 +63388,16 @@ def deleteDriveFileACLs(users, useDomainAdminAccess=False):
       showTitles = getBoolean()
     elif myarg == 'updatesheetprotectedranges':
       updateSheetProtectedRanges = getBoolean()
+    elif myarg == 'enforceexpansiveaccess':
+      enforceExpansiveAccess = getBoolean()
     elif myarg in ADMIN_ACCESS_OPTIONS:
       useDomainAdminAccess = True
     else:
       unknownArgumentExit()
   _checkFileIdEntityDomainAccess(fileIdEntity, useDomainAdminAccess)
+  deleteKwargs = {'useDomainAdminAccess': useDomainAdminAccess}
+  if enforceExpansiveAccess is not None:
+    deleteKwargs['enforceExpansiveAccess'] = enforceExpansiveAccess
   i, count, users = getEntityArgument(users)
   for user in users:
     i += 1
@@ -63892,7 +63430,8 @@ def deleteDriveFileACLs(users, useDomainAdminAccess=False):
                 break
         callGAPI(drive.permissions(), 'delete',
                  throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+GAPI.DRIVE3_DELETE_ACL_THROW_REASONS+[GAPI.FILE_NEVER_WRITABLE],
-                 useDomainAdminAccess=useDomainAdminAccess, fileId=fileId, permissionId=permissionId, supportsAllDrives=True)
+                 **deleteKwargs,
+                 fileId=fileId, permissionId=permissionId, supportsAllDrives=True)
         entityActionPerformed([Ent.USER, user, entityType, fileName, Ent.PERMISSION_ID, permissionId], j, jcount)
         if updateSheetProtectedRanges and mimeType == MIMETYPE_GA_SPREADSHEET:
           _updateSheetProtectedRangesACLchange(sheet, user, i, count, j, jcount, fileId, fileName, False, permission)
@@ -63914,6 +63453,7 @@ def doDeleteDriveFileACLs():
 
 # gam [<UserTypeEntity>] delete permissions <DriveFileEntity> <DriveFilePermissionIDEntity> [asadmin]
 #	<PermissionMatch>* [<PermissionMatchAction>]
+#	[enforceexpansiveaccess [<Boolean>]]
 def deletePermissions(users, useDomainAdminAccess=False):
   def convertJSONPermissions(jsonPermissions):
     permissionIds = []
@@ -63923,7 +63463,7 @@ def deletePermissions(users, useDomainAdminAccess=False):
       permissionIds.append(permission['id'])
     return permissionIds
 
-  def _callbackDeletePermissionId(request_id, response, exception):
+  def _callbackDeletePermissionId(request_id, _, exception):
     ri = request_id.splitlines()
     if int(ri[RI_J]) == 1:
       entityPerformActionNumItems([Ent.DRIVE_FILE_OR_FOLDER_ID, ri[RI_ENTITY]], int(ri[RI_JCOUNT]), Ent.PERMISSION_ID, int(ri[RI_I]), int(ri[RI_COUNT]))
@@ -63948,7 +63488,8 @@ def deletePermissions(users, useDomainAdminAccess=False):
         callGAPI(drive.permissions(), 'delete',
                  throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+GAPI.DRIVE3_DELETE_ACL_THROW_REASONS,
                  retryReasons=[GAPI.SERVICE_LIMIT],
-                 useDomainAdminAccess=useDomainAdminAccess, fileId=ri[RI_ENTITY], permissionId=ri[RI_ITEM], supportsAllDrives=True)
+                 useDomainAdminAccess=useDomainAdminAccess, enforceExpansiveAccess=enforceExpansiveAccess,
+                 fileId=ri[RI_ENTITY], permissionId=ri[RI_ITEM], supportsAllDrives=True)
         entityActionPerformed([Ent.DRIVE_FILE_OR_FOLDER_ID, ri[RI_ENTITY], Ent.PERMISSION_ID, ri[RI_ITEM]], int(ri[RI_J]), int(ri[RI_JCOUNT]))
       except (GAPI.fileNotFound, GAPI.forbidden, GAPI.internalError, GAPI.insufficientFilePermissions, GAPI.unknownError,
               GAPI.badRequest, GAPI.cannotRemoveOwner, GAPI.cannotModifyInheritedTeamDrivePermission,
@@ -63968,12 +63509,15 @@ def deletePermissions(users, useDomainAdminAccess=False):
     jsonData = getJSON([])
     PM = PermissionMatch()
     PM.SetDefaultMatch(False, {'role': 'owner'})
+  enforceExpansiveAccess = False
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
     if myarg in ADMIN_ACCESS_OPTIONS:
       useDomainAdminAccess = True
     elif PM and PM.ProcessArgument(myarg):
       pass
+    elif myarg == 'enforceexpansiveaccess':
+      enforceExpansiveAccess = getBoolean()
     else:
       unknownArgumentExit()
   _checkFileIdEntityDomainAccess(fileIdEntity, useDomainAdminAccess)
@@ -65420,7 +64964,7 @@ def infoSharedDrive(users, useDomainAdminAccess=False):
       guiRoles = getBoolean()
     else:
       FJQC.GetFormatJSON(myarg)
-  fields = ','.join(set(fieldsList)) if fieldsList else '*'
+  fields = getFieldsFromFieldsList(fieldsList) if fieldsList else '*'
   i, count, users = getEntityArgument(users)
   for user in users:
     i += 1
@@ -65632,7 +65176,7 @@ def doPrintShowSharedDrives():
 def doPrintShowOrgunitSharedDrives():
   def _getOrgUnitSharedDriveInfo(shareddrive):
     shareddrive['driveId'] = shareddrive['name'].rsplit(';')[1]
-    shareddrive['driveName'] = _getSharedDriveNameFromId(drive, shareddrive['driveId'], useDomainAdminAccess=True)
+    shareddrive['driveName'] = _getSharedDriveNameFromId(shareddrive['driveId'])
     shareddrive['orgUnitPath'] = orgUnitPath
 
   def _showOrgUnitSharedDrive(shareddrive, j, jcount, FJQC):
@@ -65651,8 +65195,8 @@ def doPrintShowOrgunitSharedDrives():
 
   ci = buildGAPIObject(API.CLOUDIDENTITY_ORGUNITS_BETA)
   cd = buildGAPIObject(API.DIRECTORY)
-  _, drive = buildGAPIServiceObject(API.DRIVE3, _getAdminEmail())
-  if not drive:
+  _, GM.Globals[GM.ADMIN_DRIVE] = buildGAPIServiceObject(API.DRIVE3, _getAdminEmail())
+  if not GM.Globals[GM.ADMIN_DRIVE]:
     return
   csvPF = CSVPrintFile(['name', 'type', 'member', 'memberUri', 'driveId', 'driveName', 'orgUnitPath']) if Act.csvFormat() else None
   FJQC = FormatJSONQuoteChar(csvPF)
@@ -65731,13 +65275,13 @@ def copySyncSharedDriveACLs(users, useDomainAdminAccess=False):
     if not drive:
       continue
     if not srcFileIdEntity.get('shareddrivename'):
-      srcFileIdEntity['shareddrivename'] = _getSharedDriveNameFromId(drive, srcFileIdEntity['shareddrive']['driveId'])
+      srcFileIdEntity['shareddrivename'] = _getSharedDriveNameFromId(srcFileIdEntity['shareddrive']['driveId'])
     if tgtFileIdEntity.get('shareddrivename'):
       if not _convertSharedDriveNameToId(drive, user, i, count, tgtFileIdEntity, useDomainAdminAccess):
         continue
       tgtFileIdEntity['shareddrive']['corpora'] = 'drive'
     else:
-      tgtFileIdEntity['shareddrivename'] = _getSharedDriveNameFromId(drive, tgtFileIdEntity['shareddrive']['driveId'])
+      tgtFileIdEntity['shareddrivename'] = _getSharedDriveNameFromId(tgtFileIdEntity['shareddrive']['driveId'])
     statistics = _initStatistics()
     copyMoveOptions['sourceDriveId'] = srcFileIdEntity['shareddrive']['driveId']
     copyMoveOptions['destDriveId'] = tgtFileIdEntity['shareddrive']['driveId']
@@ -69204,7 +68748,7 @@ def deleteLabels(users, labelEntity):
     http_status, reason, message = checkGAPIError(exception)
     entityActionFailedWarning([Ent.USER, ri[RI_ENTITY], Ent.LABEL, labelIdToNameMap[ri[RI_ITEM]]], formatHTTPError(http_status, reason, message), int(ri[RI_J]), int(ri[RI_JCOUNT]))
 
-  def _callbackDeleteLabel(request_id, response, exception):
+  def _callbackDeleteLabel(request_id, _, exception):
     ri = request_id.splitlines()
     if exception is None:
       entityActionPerformed([Ent.USER, ri[RI_ENTITY], Ent.LABEL, labelIdToNameMap[ri[RI_ITEM]]], int(ri[RI_J]), int(ri[RI_JCOUNT]))
@@ -69326,13 +68870,18 @@ LABEL_COUNTS_FIELDS = ','.join(LABEL_COUNTS_FIELDS_LIST)
 def printShowLabels(users):
   def _buildLabelTree(labels):
     def _checkChildLabel(label):
-      if label.find('/') != -1:
-        (parent, base) = label.rsplit('/', 1)
+      labelItemList = label.split('/')
+      i = len(labelItemList)-1
+      while i > 0:
+        parent = '/'.join(labelItemList[:i])
+        base = '/'.join(labelItemList[i:])
         if parent in labelTree:
           if label in labelTree:
             labelTree[label]['info']['base'] = base
             labelTree[parent]['children'].append(labelTree.pop(label))
           _checkChildLabel(parent)
+          return
+        i -= 1
 
     labelTree = {}
     for label in labels['labels']:
@@ -69565,7 +69114,7 @@ def _initMessageThreadParameters(entityType, doIt, maxToProcess):
           'query': '', 'queryTimes': {},
           'entityType': entityType, 'messageEntity': None, 'doIt': doIt, 'quick': True,
           'labelMatchPattern': None, 'senderMatchPattern': None,
-          'maxToProcess': maxToProcess, 'maxItems': 0,
+          'maxToProcess': maxToProcess, 'maxItems': 0, 'maxMessagesPerThread': 0,
           'maxToKeywords': [MESSAGES_MAX_TO_KEYWORDS[Act.Get()], 'maxtoprocess'],
           'listType': listType, 'fields': f'nextPageToken,{listType}(id)'}
 
@@ -69607,6 +69156,8 @@ def _getMessageSelectParameters(myarg, parameters):
     parameters['doIt'] = True
   elif myarg in parameters['maxToKeywords']:
     parameters['maxToProcess'] = getInteger(minVal=0)
+  elif myarg == 'maxmessagesperthread':
+    parameters['maxMessagesPerThread'] = getInteger(minVal=0)
   else:
     return False
   return True
@@ -69798,7 +69349,7 @@ def _processMessagesThreads(users, entityType):
                                         GAPI.INVALID_MESSAGE_ID: Msg.INVALID_MESSAGE_ID,
                                         GAPI.FAILED_PRECONDITION: Msg.FAILED_PRECONDITION}
 
-  def _callbackProcessMessage(request_id, response, exception):
+  def _callbackProcessMessage(request_id, _, exception):
     ri = request_id.splitlines()
     if exception is None:
       if not csvPF:
@@ -70746,8 +70297,6 @@ def printShowMessagesThreads(users, entityType):
     return None
 
   def _qualifyMessage(user, result):
-    if parameters['maxToProcess'] and parameters['messagesProcessed'] == parameters['maxToProcess']:
-      return (False, None)
     if senderMatchPattern:
       sender = _checkSenderMatchCount(result)
       if not sender:
@@ -70775,7 +70324,9 @@ def printShowMessagesThreads(users, entityType):
     except ValueError:
       return headerValue
 
-  def _showMessage(user, result, j, jcount):
+  def _showMessage(user, result, j, jcount, checkMax=True):
+    if checkMax and parameters['maxToProcess'] and parameters['messagesProcessed'] == parameters['maxToProcess']:
+      return
     status, messageLabels = _qualifyMessage(user, result)
     if not status:
       return
@@ -70811,7 +70362,8 @@ def printShowMessagesThreads(users, entityType):
     if show_attachments or save_attachments or upload_attachments:
       _showSaveAttachments(result['id'], result['payload'], attachmentNamePattern, j, jcount)
     Ind.Decrement()
-    parameters['messagesProcessed'] += 1
+    if checkMax:
+      parameters['messagesProcessed'] += 1
 
   def _getAttachments(messageId, payload, attachmentNamePattern, attachments):
     for part in payload.get('parts', []):
@@ -70833,7 +70385,9 @@ def printShowMessagesThreads(users, entityType):
       else:
         _getAttachments(messageId, part, attachmentNamePattern, attachments)
 
-  def _printMessage(user, result):
+  def _printMessage(user, result, checkMax=True):
+    if checkMax and parameters['maxToProcess'] and parameters['messagesProcessed'] == parameters['maxToProcess']:
+      return
     status, messageLabels = _qualifyMessage(user, result)
     if not status:
       return
@@ -70887,7 +70441,8 @@ def printShowMessagesThreads(users, entityType):
         row[f'Attachments{GC.Values[GC.CSV_OUTPUT_SUBFIELD_DELIMITER]}{i}{GC.Values[GC.CSV_OUTPUT_SUBFIELD_DELIMITER]}size'] = attachment[2]
         row[f'Attachments{GC.Values[GC.CSV_OUTPUT_SUBFIELD_DELIMITER]}{i}{GC.Values[GC.CSV_OUTPUT_SUBFIELD_DELIMITER]}charset'] = attachment[3]
     csvPF.WriteRowTitles(row)
-    parameters['messagesProcessed'] += 1
+    if checkMax:
+      parameters['messagesProcessed'] += 1
 
   def _countMessageLabels(user, result):
     if senderMatchPattern:
@@ -70917,6 +70472,8 @@ def printShowMessagesThreads(users, entityType):
     messageThreadCounts['size'] += result['sizeEstimate']
 
   def _showThread(user, result, j, jcount):
+    if parameters['maxToProcess'] and parameters['messagesProcessed'] == parameters['maxToProcess']:
+      return
     if senderMatchPattern:
       for message in result['messages']:
         if _checkSenderMatch(message):
@@ -70932,19 +70489,29 @@ def printShowMessagesThreads(users, entityType):
     k = 0
     for message in result['messages']:
       k += 1
-      _showMessage(user, message, k, kcount)
+      _showMessage(user, message, k, kcount, False)
+      if k == parameters['maxMessagesPerThread']:
+        break
     Ind.Decrement()
+    parameters['messagesProcessed'] += 1
 
   def _printThread(user, result):
+    if parameters['maxToProcess'] and parameters['messagesProcessed'] == parameters['maxToProcess']:
+      return
     if senderMatchPattern:
       for message in result['messages']:
         if _checkSenderMatch(message):
           break
       else:
         return
+    k = 0
     for message in result['messages']:
-      _printMessage(user, message)
+      k += 1
+      _printMessage(user, message, False)
+      if k == parameters['maxMessagesPerThread']:
+        break
     messageThreadCounts['threads'] += 1
+    parameters['messagesProcessed'] += 1
 
   def _countThreadLabels(user, result):
     for message in result['messages']:
@@ -70959,8 +70526,12 @@ def printShowMessagesThreads(users, entityType):
       else:
         return
     else:
+      k = 0
       for message in result['messages']:
+        k += 1
         messageThreadCounts['size'] += message['sizeEstimate']
+        if k == parameters['maxMessagesPerThread']:
+          break
     messageThreadCounts['threads'] += 1
 
   _GMAIL_ERROR_REASON_TO_MESSAGE_MAP = {GAPI.NOT_FOUND: Msg.DOES_NOT_EXIST, GAPI.INVALID_MESSAGE_ID: Msg.INVALID_MESSAGE_ID}
@@ -74542,14 +74113,14 @@ def createNotesACLs(users):
         request['parent'] = name
       try:
         permissions = callGAPI(keep.notes().permissions(), 'batchCreate',
-                               throwReasons=GAPI.KEEP_THROW_REASONS,
+                               throwReasons=GAPI.KEEP_THROW_REASONS+[GAPI.FAILED_PRECONDITION],
                                parent=name, body=rbody)
         entityNumItemsActionPerformed(entityKVList, kcount, Ent.NOTE_ACL, j, jcount)
         if showDetails:
           Ind.Increment()
           _showNotePermissions(permissions['permissions'])
           Ind.Decrement()
-      except (GAPI.badRequest, GAPI.invalidArgument, GAPI.notFound) as e:
+      except (GAPI.badRequest, GAPI.invalidArgument, GAPI.notFound, GAPI.failedPrecondition) as e:
         entityActionFailedWarning(entityKVList, str(e), i, count)
       except GAPI.authError:
         userKeepServiceNotEnabledWarning(user, i, count)
@@ -75579,8 +75150,8 @@ MAIN_ADD_CREATE_FUNCTIONS = {
   Cmd.ARG_SAKEY:		doCreateSvcAcctKeys,
   Cmd.ARG_SCHEMA:		doCreateUpdateUserSchemas,
   Cmd.ARG_SHAREDDRIVE:		doCreateSharedDrive,
-  Cmd.ARG_SITE:			doCreateDomainSite,
-  Cmd.ARG_SITEACL:		doProcessDomainSiteACLs,
+  Cmd.ARG_SITE:			deprecatedDomainSites,
+  Cmd.ARG_SITEACL:		deprecatedDomainSites,
   Cmd.ARG_SVCACCT:		doCreateSvcAcct,
   Cmd.ARG_USER:			doCreateUser,
   Cmd.ARG_VAULTEXPORT:		doCreateVaultExport,
@@ -75694,7 +75265,7 @@ MAIN_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_SAKEY:		doDeleteSvcAcctKeys,
       Cmd.ARG_SCHEMA:		doDeleteUserSchemas,
       Cmd.ARG_SHAREDDRIVE:	doDeleteSharedDrive,
-      Cmd.ARG_SITEACL:		doProcessDomainSiteACLs,
+      Cmd.ARG_SITEACL:		deprecatedDomainSites,
       Cmd.ARG_SVCACCT:		doDeleteSvcAcct,
       Cmd.ARG_USER:		doDeleteUser,
       Cmd.ARG_USERS:		doDeleteUsers,
@@ -75783,8 +75354,8 @@ MAIN_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_RESOURCES:	doInfoResourceCalendars,
       Cmd.ARG_SCHEMA:		doInfoUserSchemas,
       Cmd.ARG_SHAREDDRIVE:	doInfoSharedDrive,
-      Cmd.ARG_SITE:		doInfoDomainSites,
-      Cmd.ARG_SITEACL:		doProcessDomainSiteACLs,
+      Cmd.ARG_SITE:		deprecatedDomainSites,
+      Cmd.ARG_SITEACL:		deprecatedDomainSites,
       Cmd.ARG_USER:		doInfoUser,
       Cmd.ARG_USERS:		doInfoUsers,
       Cmd.ARG_USERINVITATION:	doInfoCIUserInvitations,
@@ -75886,9 +75457,9 @@ MAIN_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_SCHEMA:		doPrintShowUserSchemas,
       Cmd.ARG_SHAREDDRIVE:	doPrintShowSharedDrives,
       Cmd.ARG_SHAREDDRIVEACLS:	doPrintShowSharedDriveACLs,
-      Cmd.ARG_SITE:		doPrintShowDomainSites,
-      Cmd.ARG_SITEACL:		doProcessDomainSiteACLs,
-      Cmd.ARG_SITEACTIVITY:	doPrintDomainSiteActivity,
+      Cmd.ARG_SITE:		deprecatedDomainSites,
+      Cmd.ARG_SITEACL:		deprecatedDomainSites,
+      Cmd.ARG_SITEACTIVITY:	deprecatedDomainSites,
       Cmd.ARG_SVCACCT:		doPrintShowSvcAccts,
       Cmd.ARG_TOKEN:		doPrintShowTokens,
       Cmd.ARG_TRANSFERAPPS:	doShowTransferApps,
@@ -76004,8 +75575,8 @@ MAIN_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_SHAREDDRIVEACLS:	doPrintShowSharedDriveACLs,
       Cmd.ARG_SHAREDDRIVEINFO:	doInfoSharedDrive,
       Cmd.ARG_SHAREDDRIVETHEMES:	doShowSharedDriveThemes,
-      Cmd.ARG_SITE:		doPrintShowDomainSites,
-      Cmd.ARG_SITEACL:		doProcessDomainSiteACLs,
+      Cmd.ARG_SITE:		deprecatedDomainSites,
+      Cmd.ARG_SITEACL:		deprecatedDomainSites,
       Cmd.ARG_SVCACCT:		doPrintShowSvcAccts,
       Cmd.ARG_TOKEN:		doPrintShowTokens,
       Cmd.ARG_TRANSFERAPPS:	doShowTransferApps,
@@ -76070,8 +75641,8 @@ MAIN_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_SAKEY:		doUpdateSvcAcctKeys,
       Cmd.ARG_SCHEMA:		doCreateUpdateUserSchemas,
       Cmd.ARG_SHAREDDRIVE:	doUpdateSharedDrive,
-      Cmd.ARG_SITE:		doUpdateDomainSites,
-      Cmd.ARG_SITEACL:		doProcessDomainSiteACLs,
+      Cmd.ARG_SITE:		deprecatedDomainSites,
+      Cmd.ARG_SITEACL:		deprecatedDomainSites,
       Cmd.ARG_SVCACCT:		doCheckUpdateSvcAcct,
       Cmd.ARG_USER:		doUpdateUser,
       Cmd.ARG_USERS:		doUpdateUsers,
@@ -76610,8 +76181,8 @@ USER_ADD_CREATE_FUNCTIONS = {
   Cmd.ARG_SENDAS:		createUpdateSendAs,
   Cmd.ARG_SHAREDDRIVE:		createSharedDrive,
   Cmd.ARG_SHEET:		createSheet,
-  Cmd.ARG_SITE:			createUserSite,
-  Cmd.ARG_SITEACL:		processUserSiteACLs,
+  Cmd.ARG_SITE:			deprecatedUserSites,
+  Cmd.ARG_SITEACL:		deprecatedUserSites,
   Cmd.ARG_SMIME:		createSmime,
   Cmd.ARG_TASK:			processTasks,
   Cmd.ARG_TASKLIST:		processTasklists,
@@ -76729,7 +76300,7 @@ USER_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_SENDAS:		deleteInfoSendAs,
       Cmd.ARG_SMIME:		deleteSmime,
       Cmd.ARG_SHAREDDRIVE:	deleteSharedDrive,
-      Cmd.ARG_SITEACL:		processUserSiteACLs,
+      Cmd.ARG_SITEACL:		deprecatedUserSites,
       Cmd.ARG_TASK:		processTasks,
       Cmd.ARG_TASKLIST:		processTasklists,
       Cmd.ARG_THREAD:		processThreads,
@@ -76818,8 +76389,8 @@ USER_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_SENDAS:		deleteInfoSendAs,
       Cmd.ARG_SHAREDDRIVE:	infoSharedDrive,
       Cmd.ARG_SHEET:		infoPrintShowSheets,
-      Cmd.ARG_SITE:		infoUserSites,
-      Cmd.ARG_SITEACL:		processUserSiteACLs,
+      Cmd.ARG_SITE:		deprecatedUserSites,
+      Cmd.ARG_SITEACL:		deprecatedUserSites,
       Cmd.ARG_TASK:		processTasks,
       Cmd.ARG_TASKLIST:		processTasklists,
       Cmd.ARG_USER:		infoUsers,
@@ -76931,9 +76502,9 @@ USER_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_SHEETRANGE:	printShowSheetRanges,
       Cmd.ARG_SIGNATURE:	printShowSignature,
       Cmd.ARG_SMIME:		printShowSmimes,
-      Cmd.ARG_SITE:		printShowUserSites,
-      Cmd.ARG_SITEACL:		processUserSiteACLs,
-      Cmd.ARG_SITEACTIVITY:	printUserSiteActivity,
+      Cmd.ARG_SITE:		deprecatedUserSites,
+      Cmd.ARG_SITEACL:		deprecatedUserSites,
+      Cmd.ARG_SITEACTIVITY:	deprecatedUserSites,
       Cmd.ARG_TASK:		printShowTasks,
       Cmd.ARG_TASKLIST:		printShowTasklists,
       Cmd.ARG_THREAD:		printShowThreads,
@@ -77037,8 +76608,8 @@ USER_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_SHEET:		infoPrintShowSheets,
       Cmd.ARG_SHEETRANGE:	printShowSheetRanges,
       Cmd.ARG_SIGNATURE:	printShowSignature,
-      Cmd.ARG_SITE:		printShowUserSites,
-      Cmd.ARG_SITEACL:		processUserSiteACLs,
+      Cmd.ARG_SITE:		deprecatedUserSites,
+      Cmd.ARG_SITEACL:		deprecatedUserSites,
       Cmd.ARG_SMIME:		printShowSmimes,
       Cmd.ARG_TASK:		printShowTasks,
       Cmd.ARG_TASKLIST:		printShowTasklists,
@@ -77141,8 +76712,8 @@ USER_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_SHEET:		updateSheets,
       Cmd.ARG_SHEETRANGE:	updateSheetRanges,
       Cmd.ARG_SMIME:		updateSmime,
-      Cmd.ARG_SITE:		updateUserSites,
-      Cmd.ARG_SITEACL:		processUserSiteACLs,
+      Cmd.ARG_SITE:		deprecatedUserSites,
+      Cmd.ARG_SITEACL:		deprecatedUserSites,
       Cmd.ARG_TASK:		processTasks,
       Cmd.ARG_TASKLIST:		processTasklists,
       Cmd.ARG_USER:		updateUsers,

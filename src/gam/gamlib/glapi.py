@@ -71,11 +71,11 @@ GROUPSMIGRATION = 'groupsmigration'
 GROUPSSETTINGS = 'groupssettings'
 IAM = 'iam'
 IAM_CREDENTIALS = 'iamcredentials'
-IAP = 'iap'
 KEEP = 'keep'
 LICENSING = 'licensing'
 LOOKERSTUDIO = 'datastudio'
 MEET = 'meet'
+MEET_BETA = 'meetbeta'
 OAUTH2 = 'oauth2'
 ORGPOLICY = 'orgpolicy'
 PEOPLE = 'people'
@@ -90,7 +90,6 @@ SERVICEMANAGEMENT = 'servicemanagement'
 SERVICEUSAGE = 'serviceusage'
 SHEETS = 'sheets'
 SHEETSTD = 'sheetstd'
-SITES = 'sites'
 SITEVERIFICATION = 'siteVerification'
 STORAGE = 'storage'
 STORAGEREAD = 'storageread'
@@ -185,7 +184,6 @@ PROJECT_APIS = [
   'groupsmigration.googleapis.com',
   'groupssettings.googleapis.com',
   'iam.googleapis.com',
-  'iap.googleapis.com',
   'keep.googleapis.com',
   'licensing.googleapis.com',
   'meet.googleapis.com',
@@ -229,7 +227,7 @@ _INFO = {
   CLOUDIDENTITY_INBOUND_SSO: {'name': 'Cloud Identity Inbound SSO API', 'version': 'v1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
   CLOUDIDENTITY_ORGUNITS: {'name': 'Cloud Identity OrgUnits API', 'version': 'v1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
   CLOUDIDENTITY_ORGUNITS_BETA: {'name': 'Cloud Identity OrgUnits API', 'version': 'v1beta1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
-  CLOUDIDENTITY_POLICY: {'name': 'Cloud Identity Policy API', 'version': 'v1beta1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
+  CLOUDIDENTITY_POLICY: {'name': 'Cloud Identity Policy API', 'version': 'v1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
   CLOUDIDENTITY_USERINVITATIONS: {'name': 'Cloud Identity User Invitations API', 'version': 'v1', 'v2discovery': True, 'mappedAPI': 'cloudidentity'},
   CLOUDRESOURCEMANAGER: {'name': 'Cloud Resource Manager API v3', 'version': 'v3', 'v2discovery': True},
   CONTACTS: {'name': 'Contacts API', 'version': 'v3', 'v2discovery': False},
@@ -250,11 +248,11 @@ _INFO = {
   GROUPSSETTINGS: {'name': 'Groups Settings API', 'version': 'v1', 'v2discovery': True},
   IAM: {'name': 'Identity and Access Management API', 'version': 'v1', 'v2discovery': True},
   IAM_CREDENTIALS: {'name': 'Identity and Access Management Credentials API', 'version': 'v1', 'v2discovery': True},
-  IAP: {'name': 'Cloud Identity-Aware Proxy API', 'version': 'v1', 'v2discovery': True},
   KEEP: {'name': 'Keep API', 'version': 'v1', 'v2discovery': True},
   LICENSING: {'name': 'License Manager API', 'version': 'v1', 'v2discovery': True},
   LOOKERSTUDIO: {'name': 'Looker Studio API', 'version': 'v1', 'v2discovery': True, 'localjson': True},
   MEET: {'name': 'Meet API', 'version': 'v2', 'v2discovery': True},
+  MEET_BETA: {'name': 'Meet API', 'version': 'v2beta', 'v2discovery': True, 'localjson': True, 'mappedAPI': MEET},
   OAUTH2: {'name': 'OAuth2 API', 'version': 'v2', 'v2discovery': False},
   ORGPOLICY: {'name': 'Organization Policy API', 'version': 'v2', 'v2discovery': True},
   PEOPLE: {'name': 'People API', 'version': 'v1', 'v2discovery': True},
@@ -269,7 +267,6 @@ _INFO = {
   SERVICEUSAGE: {'name': 'Service Usage API', 'version': 'v1', 'v2discovery': True},
   SHEETS: {'name': 'Sheets API', 'version': 'v4', 'v2discovery': True},
   SHEETSTD: {'name': 'Sheets API - todrive', 'version': 'v4', 'v2discovery': True, 'mappedAPI': SHEETS},
-  SITES: {'name': 'Sites API', 'version': 'v1', 'v2discovery': False},
   SITEVERIFICATION: {'name': 'Site Verification API', 'version': 'v1', 'v2discovery': True},
   STORAGE: {'name': 'Cloud Storage API', 'version': 'v1', 'v2discovery': True},
   STORAGEREAD: {'name': 'Cloud Storage API - Read', 'version': 'v1', 'v2discovery': True, 'mappedAPI': STORAGE},
@@ -503,11 +500,6 @@ _CLIENT_SCOPES = [
    'subscopes': [],
    'offByDefault': True,
    'scope': 'https://www.googleapis.com/auth/siteverification'},
-  {'name': 'Sites API',
-   'api': SITES,
-   'subscopes': [],
-   'offByDefault': True,
-   'scope': 'https://sites.google.com/feeds'},
   {'name': 'Vault API',
    'api': VAULT,
    'subscopes': READONLY,
@@ -697,10 +689,6 @@ _SVCACCT_SCOPES = [
    'api': SHEETS,
    'subscopes': READONLY,
    'scope': 'https://www.googleapis.com/auth/spreadsheets'},
-  {'name': 'Sites API',
-   'api': SITES,
-   'subscopes': [],
-   'scope': 'https://sites.google.com/feeds'},
   {'name': 'Tasks API',
    'api': TASKS,
    'subscopes': READONLY,
