@@ -25,7 +25,7 @@ https://github.com/GAM-team/GAM/wiki
 """
 
 __author__ = 'GAM Team <google-apps-manager@googlegroups.com>'
-__version__ = '7.08.03'
+__version__ = '7.09.02'
 __license__ = 'Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)'
 
 #pylint: disable=wrong-import-position
@@ -10632,7 +10632,6 @@ def getOAuthClientIDAndSecret():
     invalidClientSecretsJsonExit(str(e))
 
 def getScopesFromUser(scopesList, clientAccess, currentScopes=None):
-  forceOffScopes = []
   OAUTH2_CMDS = ['s', 'u', 'e', 'c']
   oauth2_menu = ''
   numScopes = len(scopesList)
@@ -10683,9 +10682,6 @@ Continue to authorization by entering a 'c'
               break
         i += 1
     else:
-      for api in currentScopes:
-        if api in API.FORCE_OFF_SA_SCOPES:
-          forceOffScopes.extend(currentScopes[api])
       i = 0
       for a_scope in scopesList:
         selectedScopes[i] = ' '
@@ -10754,12 +10750,12 @@ Continue to authorization by entering a 'c'
             for i in range(numScopes):
               selectedScopes[i] = ' '
           elif selection == 'e':
-            return (None, None)
+            return None
           break
         sys.stdout.write(f'{ERROR_PREFIX}Invalid input "{choice}"\n')
     if selection == 'c':
       break
-  return (selectedScopes, forceOffScopes)
+  return selectedScopes
 
 def _localhost_to_ip():
   '''returns IPv4 or IPv6 loopback address which localhost resolves to.
@@ -11106,7 +11102,7 @@ def doOAuthRequest(currentScopes, login_hint, verifyScopes=False):
   client_id, client_secret = getOAuthClientIDAndSecret()
   scopesList = API.getClientScopesList(GC.Values[GC.TODRIVE_CLIENTACCESS])
   if not currentScopes or verifyScopes:
-    selectedScopes, _ = getScopesFromUser(scopesList, True, currentScopes)
+    selectedScopes = getScopesFromUser(scopesList, True, currentScopes)
     if selectedScopes is None:
       return False
     scopes = set(API.REQUIRED_SCOPES)
@@ -12237,7 +12233,7 @@ def checkServiceAccount(users):
 
   def authorizeScopes(message):
     long_url = ('https://admin.google.com/ac/owl/domainwidedelegation'
-                f'?clientScopeToAdd={",".join(checkScopes)}'
+                f'?clientScopeToAdd={",".join(sorted(checkScopes))}'
                 f'&clientIdToAdd={service_account}&overwriteClientId=true')
     if GC.Values[GC.DOMAIN]:
       long_url += f'&dn={GC.Values[GC.DOMAIN]}'
@@ -12249,11 +12245,12 @@ def checkServiceAccount(users):
   allScopes = API.getSvcAcctScopes(GC.Values[GC.USER_SERVICE_ACCOUNT_ACCESS_ONLY], Act.Get() == Act.UPDATE)
   checkScopesSet = set()
   saScopes = {}
+  checkDeprecatedScopes = True
   useColor = False
-  forceOffScopes = []
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
     if myarg in {'scope', 'scopes'}:
+      checkDeprecatedScopes = False
       for scope in getString(Cmd.OB_API_SCOPE_URL_LIST).lower().replace(',', ' ').split():
         api = API.getSvcAcctScopeAPI(scope)
         if api is not None:
@@ -12270,22 +12267,20 @@ def checkServiceAccount(users):
     testPass = createGreenText('PASS')
     testFail = createRedText('FAIL')
     testWarn = createYellowText('WARN')
+    testDeprecated = createRedText('DEPRECATED')
   else:
     testPass = 'PASS'
     testFail = 'FAIL'
     testWarn = 'WARN'
+    testDeprecated = 'DEPRECATED'
   if Act.Get() == Act.CHECK:
     if not checkScopesSet:
-      currentScopes = GM.Globals[GM.SVCACCT_SCOPES]
-      for api in currentScopes:
-        if api in API.FORCE_OFF_SA_SCOPES:
-          forceOffScopes.extend(currentScopes[api])
-        else:
-          checkScopesSet.update(currentScopes[api])
+      for scope in iter(GM.Globals[GM.SVCACCT_SCOPES].values()):
+        checkScopesSet.update(scope)
   else:
     if not checkScopesSet:
       scopesList = API.getSvcAcctScopesList(GC.Values[GC.USER_SERVICE_ACCOUNT_ACCESS_ONLY], True)
-      selectedScopes, forceOffScopes = getScopesFromUser(scopesList, False, GM.Globals[GM.SVCACCT_SCOPES] if GM.Globals[GM.SVCACCT_SCOPES_DEFINED] else None)
+      selectedScopes = getScopesFromUser(scopesList, False, GM.Globals[GM.SVCACCT_SCOPES] if GM.Globals[GM.SVCACCT_SCOPES_DEFINED] else None)
       if selectedScopes is None:
         return False
       i = 0
@@ -12408,18 +12403,39 @@ def checkServiceAccount(users):
         scopeStatus = testFail
         allScopesPass = False
       printPassFail(scope, f'{scopeStatus}{currentCount(j, jcount)}')
-    if forceOffScopes:
-      allScopesPass = False
-      if useColor:
-        scopeStatus = createRedText('DISABLE')
-      else:
-        scopeStatus = 'DISABLE'
-      jcount = len(forceOffScopes)
-      j = 0
-      for scope in forceOffScopes:
-        j +=1
-        printPassFail(scope, f'{scopeStatus}{currentCount(j, jcount)}')
     Ind.Decrement()
+    if checkDeprecatedScopes:
+      deprecatedScopes = sorted(API.DEPRECATED_SCOPES)
+      jcount = len(deprecatedScopes)
+      printKeyValueListWithCount([Msg.DEPRECATED_SCOPES, '',
+                                  Ent.Singular(Ent.USER), user,
+                                  Ent.Choose(Ent.SCOPE, jcount), jcount],
+                                 i, count)
+      Ind.Increment()
+      j = 0
+      for scope in deprecatedScopes:
+        j += 1
+        # try with and without email scope
+        for scopes in [[scope, API.USERINFO_EMAIL_SCOPE], [scope]]:
+          try:
+            credentials = getSvcAcctCredentials(scopes, user)
+            credentials.refresh(request)
+            break
+          except (httplib2.HttpLib2Error, google.auth.exceptions.TransportError, RuntimeError) as e:
+            handleServerError(e)
+          except google.auth.exceptions.RefreshError:
+            continue
+        if credentials.token:
+          token_info = callGAPI(oa2, 'tokeninfo', access_token=credentials.token)
+          if scope in token_info.get('scope', '').split(' ') and user == token_info.get('email', user).lower():
+            scopeStatus = testDeprecated
+            allScopesPass = False
+          else:
+            scopeStatus = testPass
+        else:
+          scopeStatus = testPass
+        printPassFail(scope, f'{scopeStatus}{currentCount(j, jcount)}')
+      Ind.Decrement()
     service_account = GM.Globals[GM.OAUTH2SERVICE_JSON_DATA]['client_id']
     if allScopesPass:
       if Act.Get() == Act.CHECK:
@@ -25931,7 +25947,7 @@ def exitIfChatNotConfigured(chat, kvList, errMsg, i, count):
   if (('No bot associated with this project.' in errMsg) or
       ('Invalid project number.' in errMsg) or
       ('Google Chat app not found.' in errMsg)):
-    systemErrorExit(API_ACCESS_DENIED_RC, Msg.TO_SET_UP_GOOGLE_CHAT.format(setupChatURL(chat)))
+    systemErrorExit(API_ACCESS_DENIED_RC, Msg.TO_SET_UP_GOOGLE_CHAT.format(setupChatURL(chat), GM.Globals[GM.OAUTH2SERVICE_JSON_DATA]['project_id']))
   entityActionFailedWarning(kvList, errMsg, i, count)
 
 def _getChatAdminAccess(adminAPI, userAPI):
@@ -28102,7 +28118,10 @@ def simplifyChromeSchema(schema):
                  'settings': {}
                 }
   fieldDescriptions = schema['fieldDescriptions']
+  savedSettingName = ''
+  savedTypeName = ''
   for mtype in schema['definition']['messageType']:
+    numSettings = len(mtype['field'])
     for setting in mtype['field']:
       setting_name = setting['name']
       setting_dict = {'name': setting_name,
@@ -28110,6 +28129,9 @@ def simplifyChromeSchema(schema):
                       'descriptions':  [],
                       'type': setting['type'],
                      }
+      if mtype['name'] == savedTypeName and numSettings == 1:
+        setting_dict['name'] = savedSettingName
+        savedTypeName = ''
       if setting_dict['type'] == 'TYPE_STRING' and setting.get('label') == 'LABEL_REPEATED':
         setting_dict['type'] = 'TYPE_LIST'
       if setting_dict['type'] == 'TYPE_ENUM':
@@ -28131,6 +28153,8 @@ def simplifyChromeSchema(schema):
                   break
             break
       elif setting_dict['type'] == 'TYPE_MESSAGE':
+        savedSettingName = setting_name
+        savedTypeName = setting['typeName']
         continue
       else:
         setting_dict['enums'] = None
@@ -28236,14 +28260,11 @@ def doDeleteChromePolicy():
     entityActionFailedWarning(kvList, str(e))
 
 CHROME_SCHEMA_SPECIAL_CASES = {
+# duration
   'chrome.users.AutoUpdateCheckPeriodNewV2':
     {'autoupdatecheckperiodminutesnew':
        {'casedField': 'autoUpdateCheckPeriodMinutesNew',
         'type': 'duration', 'minVal': 1, 'maxVal': 720}},
-  'chrome.users.Avatar':
-    {'useravatarimage':
-       {'casedField': 'userAvatarImage',
-        'type': 'downloadUri'}},
   'chrome.users.BrowserSwitcherDelayDurationV2':
     {'browserswitcherdelayduration':
        {'casedField': 'browserSwitcherDelayDuration',
@@ -28285,10 +28306,6 @@ CHROME_SCHEMA_SPECIAL_CASES = {
     {'maxinvalidationfetchdelay':
        {'casedField': 'maxInvalidationFetchDelay',
         'type': 'duration', 'minVal': 1, 'maxVal': 30, 'default': 10}},
-  'chrome.users.PrintingMaxSheetsAllowed':
-    {'printingmaxsheetsallowednullable':
-       {'casedField': 'printingMaxSheetsAllowedNullable',
-        'type': 'value', 'minVal': 1, 'maxVal': None}},
   'chrome.users.PrintJobHistoryExpirationPeriodNewV2':
     {'printjobhistoryexpirationperioddaysnew':
        {'casedField': 'printJobHistoryExpirationPeriodDaysNew',
@@ -28312,10 +28329,6 @@ CHROME_SCHEMA_SPECIAL_CASES = {
      'updatessuppressedstarttime':
        {'casedField': 'updatesSuppressedStartTime',
         'type': 'timeOfDay'}},
-  'chrome.users.Wallpaper':
-    {'wallpaperimage':
-       {'casedField': 'wallpaperImage',
-        'type': 'downloadUri'}},
   'chrome.devices.EnableReportUploadFrequencyV2':
     {'reportdeviceuploadfrequency':
        {'casedField': 'reportDeviceUploadFrequency',
@@ -28324,10 +28337,6 @@ CHROME_SCHEMA_SPECIAL_CASES = {
     {'uptimelimitduration':
        {'casedField': 'uptimeLimitDuration',
         'type': 'duration', 'minVal': 1, 'maxVal': 365}},
-  'chrome.devices.SignInWallpaperImage':
-    {'devicewallpaperimage':
-       {'casedField': 'deviceWallpaperImage',
-        'type': 'downloadUri'}},
   'chrome.devices.kiosk.AcPowerSettingsV2':
     {'acidletimeout':
        {'casedField': 'acIdleTimeout',
@@ -28354,10 +28363,6 @@ CHROME_SCHEMA_SPECIAL_CASES = {
      'batteryscreenofftimeout':
        {'casedField': 'batteryScreenOffTimeout',
         'type': 'duration', 'minVal': 0, 'maxVal': 35000}},
-  'chrome.devices.managedguest.Avatar':
-    {'useravatarimage':
-       {'casedField': 'userAvatarImage',
-        'type': 'downloadUri'}},
   'chrome.devices.managedguest.BrowsingDataLifetimeV2':
     {'browsinghistoryttl':
        {'casedField': 'browsingHistoryTtl',
@@ -28399,6 +28404,56 @@ CHROME_SCHEMA_SPECIAL_CASES = {
     {'sessiondurationlimit':
        {'casedField': 'sessionDurationLimit',
         'type': 'duration', 'minVal': 1, 'maxVal': 1440}},
+# value
+  'chrome.users.GaiaLockScreenOfflineSigninTimeLimitDays':
+    {'gaialockscreenofflinesignintimelimitdays':
+       {'casedField': 'gaiaLockScreenOfflineSigninTimeLimitDays',
+        'type': 'value', 'minVal': 0, 'maxVal': 365}},
+  'chrome.users.GaiaOfflineSigninTimeLimitDays':
+    {'gaiaofflinesignintimelimitdays':
+       {'casedField': 'gaiaOfflineSigninTimeLimitDays',
+        'type': 'value', 'minVal': 0, 'maxVal': 365}},
+  'chrome.users.PrintingMaxSheetsAllowed':
+    {'printingmaxsheetsallowednullable':
+       {'casedField': 'printingMaxSheetsAllowedNullable',
+        'type': 'value', 'minVal': 1, 'maxVal': None}},
+  'chrome.users.RemoteAccessHostClipboardSizeBytes':
+    {'remoteaccesshostclipboardsizebytes':
+       {'casedField': 'remoteAccessHostClipboardSizeBytes',
+        'type': 'value', 'minVal': 0, 'maxVal': 2147483647}},
+  'chrome.users.SamlLockScreenOfflineSigninTimeLimitDays':
+    {'samllockscreenofflinesignintimelimitdays':
+       {'casedField': 'samlLockScreenOfflineSigninTimeLimitDays',
+        'type': 'value', 'minVal': 0, 'maxVal': 365}},
+  'chrome.devices.ExtensionCacheSize':
+    {'extensioncachesize':
+       {'casedField': 'extensionCacheSize',
+        'type': 'value', 'minVal': 1048576, 'maxVal': None, 'default': 268435456}},
+  'chrome.devices.managedguest.PrintingMaxSheetsAllowed':
+    {'printingmaxsheetsallowednullable':
+       {'casedField': 'printingMaxSheetsAllowedNullable',
+        'type': 'value', 'minVal': 1, 'maxVal': None}},
+  'chrome.devices.managedguest.RemoteAccessHostClipboardSizeBytes':
+    {'remoteaccesshostclipboardsizebytes':
+       {'casedField': 'remoteAccessHostClipboardSizeBytes',
+        'type': 'value', 'minVal': 0, 'maxVal': 2147483647}},
+# downloadUri
+  'chrome.users.Avatar':
+    {'useravatarimage':
+       {'casedField': 'userAvatarImage',
+        'type': 'downloadUri'}},
+  'chrome.users.Wallpaper':
+    {'wallpaperimage':
+       {'casedField': 'wallpaperImage',
+        'type': 'downloadUri'}},
+  'chrome.devices.SignInWallpaperImage':
+    {'devicewallpaperimage':
+       {'casedField': 'deviceWallpaperImage',
+        'type': 'downloadUri'}},
+  'chrome.devices.managedguest.Avatar':
+    {'useravatarimage':
+       {'casedField': 'userAvatarImage',
+        'type': 'downloadUri'}},
   'chrome.devices.managedguest.Wallpaper':
     {'wallpaperimage':
        {'casedField': 'wallpaperImage',
@@ -28876,7 +28931,7 @@ def _showChromePolicySchema(schema, FJQC, i=0, count=0):
     return
   printEntity([Ent.CHROME_POLICY_SCHEMA, schema['name']], i, count)
   Ind.Increment()
-  showJSON(None, schema)
+  showJSON(None, schema, dictObjectsKey={'messageType': 'name', 'field': 'name'})
   Ind.Decrement()
 
 CHROME_POLICY_SCHEMA_FIELDS_CHOICE_MAP = {
@@ -28899,6 +28954,9 @@ CHROME_POLICY_SCHEMA_FIELDS_CHOICE_MAP = {
 #	[formatjson]
 def doInfoChromePolicySchemas():
   cp = buildGAPIObject(API.CHROMEPOLICY)
+  if checkArgumentPresent('std'):
+    doInfoChromePolicySchemasStd(cp)
+    return
   FJQC = FormatJSONQuoteChar()
   fieldsList = []
   name = _getChromePolicySchemaName()
@@ -28927,7 +28985,7 @@ def doInfoChromePolicySchemas():
 #	[filter <String>]
 #	<ChromePolicySchemaFieldName>* [fields <ChromePolicySchemaFieldNameList>]
 #	[[formatjson [quotechar <Character>]]
-def doPrintShowChromeSchemas():
+def doPrintShowChromePolicySchemas():
   def _printChromePolicySchema(schema):
     row = flattenJSON(schema)
     if not FJQC.formatJSON:
@@ -28941,10 +28999,12 @@ def doPrintShowChromeSchemas():
       row['JSON'] = json.dumps(cleanJSON(schema), ensure_ascii=False, sort_keys=True)
       csvPF.WriteRowNoFilter(row)
 
-  if checkArgumentPresent('std'):
-    doShowChromeSchemasStd()
-    return
   cp = buildGAPIObject(API.CHROMEPOLICY)
+  if checkArgumentPresent('std'):
+    if not Act.csvFormat():
+      doShowChromePolicySchemasStd(cp)
+      return
+    unknownArgumentExit()
   parent = _getCustomersCustomerIdWithC()
   csvPF = CSVPrintFile(['name', 'schemaName', 'policyDescription',
                         'policyApiLifecycle.policyApiLifecycleStage',
@@ -29004,9 +29064,51 @@ def doPrintShowChromeSchemas():
   if csvPF:
     csvPF.writeCSVfile('Chrome Policy Schemas')
 
+def _showChromePolicySchemaStd(schema):
+  printKeyValueList([f'{schema.get("name")}', f'{schema.get("description")}'])
+  Ind.Increment()
+  for val in schema['settings'].values():
+    vtype = val.get('type')
+    printKeyValueList([f'{val.get("name")}', f'{vtype}'])
+    Ind.Increment()
+    if vtype == 'TYPE_ENUM':
+      enums = val.get('enums', [])
+      descriptions = val.get('descriptions', [])
+      for i in range(len(val.get('enums', []))):
+        printKeyValueList([f'{enums[i]}', f'{descriptions[i]}'])
+    elif vtype == 'TYPE_BOOL':
+      pvs = val.get('descriptions')
+      for pvi in pvs:
+        if isinstance(pvi, dict):
+          pvalue = pvi.get('value')
+          pdescription = pvi.get('description')
+          printKeyValueList([f'{pvalue}', f'{pdescription}'])
+        elif isinstance(pvi, list):
+          printKeyValueList([f'{pvi[0]}'])
+    else:
+      description = val.get('descriptions')
+      if len(description) > 0:
+        printKeyValueList([f'{description[0]}'])
+    Ind.Decrement()
+  Ind.Decrement()
+
+# gam info chromeschema std <SchemaName>
+def doInfoChromePolicySchemasStd(cp):
+  name = _getChromePolicySchemaName()
+  checkForExtraneousArguments()
+  try:
+    schema = callGAPI(cp.customers().policySchemas(), 'get',
+                      throwReasons=[GAPI.NOT_FOUND, GAPI.BAD_REQUEST, GAPI.FORBIDDEN],
+                      name=name)
+    _, schema_dict = simplifyChromeSchema(schema)
+    _showChromePolicySchemaStd(schema_dict)
+  except GAPI.notFound:
+    entityUnknownWarning(Ent.CHROME_POLICY_SCHEMA, name)
+  except (GAPI.badRequest, GAPI.forbidden):
+    accessErrorExit(None)
+
 # gam show chromeschemas std [filter <String>]
-def doShowChromeSchemasStd():
-  cp = buildGAPIObject(API.CHROMEPOLICY)
+def doShowChromePolicySchemasStd(cp):
   sfilter = None
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
@@ -29022,33 +29124,8 @@ def doShowChromeSchemasStd():
   for schema in result:
     schema_name, schema_dict = simplifyChromeSchema(schema)
     schemas[schema_name.lower()] = schema_dict
-  for _, value in sorted(iter(schemas.items())):
-    printKeyValueList([f'{value.get("name")}', f'{value.get("description")}'])
-    Ind.Increment()
-    for val in value['settings'].values():
-      vtype = val.get('type')
-      printKeyValueList([f'{val.get("name")}', f'{vtype}'])
-      Ind.Increment()
-      if vtype == 'TYPE_ENUM':
-        enums = val.get('enums', [])
-        descriptions = val.get('descriptions', [])
-        for i in range(len(val.get('enums', []))):
-          printKeyValueList([f'{enums[i]}', f'{descriptions[i]}'])
-      elif vtype == 'TYPE_BOOL':
-        pvs = val.get('descriptions')
-        for pvi in pvs:
-          if isinstance(pvi, dict):
-            pvalue = pvi.get('value')
-            pdescription = pvi.get('description')
-            printKeyValueList([f'{pvalue}', f'{pdescription}'])
-          elif isinstance(pvi, list):
-            printKeyValueList([f'{pvi[0]}'])
-      else:
-        description = val.get('descriptions')
-        if len(description) > 0:
-          printKeyValueList([f'{description[0]}'])
-      Ind.Decrement()
-    Ind.Decrement()
+  for _, schema in sorted(iter(schemas.items())):
+    _showChromePolicySchemaStd(schema)
     printBlankLine()
 
 # gam create chromenetwork
@@ -57280,6 +57357,7 @@ def printDiskUsage(users):
             topFolder['path'] = f'{SHARED_DRIVES}{pathDelimiter}{topFolder["name"]}'
           else:
             topFolder['path'] = topFolder['name']
+          topFolder.pop('ownedByMe', None)
         elif topFolder['name'] == MY_DRIVE and not topFolder.get('parents'):
           topFolder['path'] = MY_DRIVE
         else:
@@ -57290,7 +57368,6 @@ def printDiskUsage(users):
           if owners:
             topFolder['Owner'] = owners[0].get('emailAddress', 'Unknown')
             trashFolder['Owner'] = topFolder['Owner']
-        topFolder.pop('ownedByMe', None)
         topFolder.pop('parents', None)
         topFolder.update(zeroFolderInfo)
         topFolder.pop(sizeField, None)
@@ -58737,7 +58814,7 @@ def initCopyMoveOptions(copyCmd):
     'showPermissionMessages': False,
     'sendEmailIfRequired': False,
     'useDomainAdminAccess': False,
-    'enforceExpansiveAccess': False,
+    'enforceExpansiveAccess': GC.Values[GC.ENFORCE_EXPANSIVE_ACCESS],
     'copiedShortcutsPointToCopiedFiles': True,
     'createShortcutsForNonmovableFiles': False,
     'duplicateFiles': DUPLICATE_FILE_OVERWRITE_OLDER,
@@ -62117,7 +62194,8 @@ def transferDrive(users):
   targetUserFolderPattern = '#user# old files'
   targetUserOrphansFolderPattern = '#user# orphaned files'
   targetIds = [None, None]
-  createShortcutsForNonmovableFiles = enforceExpansiveAccess = False
+  createShortcutsForNonmovableFiles = False
+  enforceExpansiveAccess = GC.Values[GC.ENFORCE_EXPANSIVE_ACCESS]
   mergeWithTarget = False
   thirdPartyOwners = {}
   skipFileIdEntity = initDriveFileEntity()
@@ -62423,7 +62501,8 @@ def transferOwnership(users):
   body = {}
   newOwner = getEmailAddress()
   OBY = OrderBy(DRIVEFILE_ORDERBY_CHOICE_MAP)
-  changeParents = enforceExpansiveAccess = filepath = includeTrashed = noRecursion = False
+  changeParents = filepath = includeTrashed = noRecursion = False
+  enforceExpansiveAccess = GC.Values[GC.ENFORCE_EXPANSIVE_ACCESS]
   pathDelimiter = '/'
   csvPF = fileTree = None
   addParents = ''
@@ -62749,7 +62828,8 @@ def claimOwnership(users):
   onlyOwners = set()
   skipOwners = set()
   subdomains = []
-  enforceExpansiveAccess = filepath = includeTrashed = False
+  filepath = includeTrashed = False
+  enforceExpansiveAccess = GC.Values[GC.ENFORCE_EXPANSIVE_ACCESS]
   pathDelimiter = '/'
   addParents = ''
   parentBody = {}
@@ -63524,7 +63604,7 @@ def doCreateDriveFileACL():
 def updateDriveFileACLs(users, useDomainAdminAccess=False):
   fileIdEntity = getDriveFileEntity()
   isEmail, permissionId = getPermissionId()
-  enforceExpansiveAccess = None
+  enforceExpansiveAccess = GC.Values[GC.ENFORCE_EXPANSIVE_ACCESS]
   removeExpiration = showTitles = updateSheetProtectedRanges = False
   showDetails = True
   csvPF = None
@@ -63562,9 +63642,6 @@ def updateDriveFileACLs(users, useDomainAdminAccess=False):
   _checkFileIdEntityDomainAccess(fileIdEntity, useDomainAdminAccess)
   if 'role' not in body:
     missingArgumentExit(f'role {formatChoiceList(DRIVEFILE_ACL_ROLES_MAP)}')
-  updateKwargs = {'useDomainAdminAccess': useDomainAdminAccess}
-  if enforceExpansiveAccess is not None:
-    updateKwargs['enforceExpansiveAccess'] = enforceExpansiveAccess
   printKeys, timeObjects = _getDriveFileACLPrintKeysTimeObjects()
   if csvPF and showTitles:
     csvPF.AddTitles(fileNameTitle)
@@ -63602,7 +63679,7 @@ def updateDriveFileACLs(users, useDomainAdminAccess=False):
         permission = callGAPI(drive.permissions(), 'update',
                               bailOnInternalError=True,
                               throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+GAPI.DRIVE3_UPDATE_ACL_THROW_REASONS+[GAPI.FILE_NEVER_WRITABLE],
-                              **updateKwargs,
+                              useDomainAdminAccess=useDomainAdminAccess, enforceExpansiveAccess=enforceExpansiveAccess,
                               fileId=fileId, permissionId=permissionId, removeExpiration=removeExpiration,
                               transferOwnership=body.get('role', '') == 'owner', body=body, fields='*', supportsAllDrives=True)
         if updateSheetProtectedRanges and mimeType == MIMETYPE_GA_SPREADSHEET:
@@ -63853,7 +63930,7 @@ def doCreatePermissions():
 def deleteDriveFileACLs(users, useDomainAdminAccess=False):
   fileIdEntity = getDriveFileEntity()
   isEmail, permissionId = getPermissionId()
-  enforceExpansiveAccess = None
+  enforceExpansiveAccess = GC.Values[GC.ENFORCE_EXPANSIVE_ACCESS]
   showTitles = updateSheetProtectedRanges = False
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
@@ -63868,9 +63945,6 @@ def deleteDriveFileACLs(users, useDomainAdminAccess=False):
     else:
       unknownArgumentExit()
   _checkFileIdEntityDomainAccess(fileIdEntity, useDomainAdminAccess)
-  deleteKwargs = {'useDomainAdminAccess': useDomainAdminAccess}
-  if enforceExpansiveAccess is not None:
-    deleteKwargs['enforceExpansiveAccess'] = enforceExpansiveAccess
   i, count, users = getEntityArgument(users)
   for user in users:
     i += 1
@@ -63903,7 +63977,7 @@ def deleteDriveFileACLs(users, useDomainAdminAccess=False):
                 break
         callGAPI(drive.permissions(), 'delete',
                  throwReasons=GAPI.DRIVE_ACCESS_THROW_REASONS+GAPI.DRIVE3_DELETE_ACL_THROW_REASONS+[GAPI.FILE_NEVER_WRITABLE],
-                 **deleteKwargs,
+                 useDomainAdminAccess=useDomainAdminAccess, enforceExpansiveAccess=enforceExpansiveAccess,
                  fileId=fileId, permissionId=permissionId, supportsAllDrives=True)
         entityActionPerformed([Ent.USER, user, entityType, fileName, Ent.PERMISSION_ID, permissionId], j, jcount)
         if updateSheetProtectedRanges and mimeType == MIMETYPE_GA_SPREADSHEET:
@@ -63982,7 +64056,7 @@ def deletePermissions(users, useDomainAdminAccess=False):
     jsonData = getJSON([])
     PM = PermissionMatch()
     PM.SetDefaultMatch(False, {'role': 'owner'})
-  enforceExpansiveAccess = False
+  enforceExpansiveAccess = GC.Values[GC.ENFORCE_EXPANSIVE_ACCESS]
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
     if myarg in ADMIN_ACCESS_OPTIONS:
@@ -66221,7 +66295,7 @@ def printSharedDriveOrganizers(users, useDomainAdminAccess=False):
                                     useDomainAdminAccess=useDomainAdminAccess,
                                     fileId=shareddrive['id'], fields=fields, supportsAllDrives=True)
         for permission in permissions:
-          if permission['type'] in includeTypes and permission['role'] in roles:
+          if permission['type'] in includeTypes and permission['role'] in roles and permission.get('emailAddress', ''):
             if domainList:
               _, domain = permission['emailAddress'].lower().split('@', 1)
               if domain not in domainList:
@@ -76088,7 +76162,7 @@ MAIN_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_CHROMENEEDSATTN:	doPrintShowChromeNeedsAttn,
       Cmd.ARG_CHROMEPOLICY:	doPrintShowChromePolicies,
       Cmd.ARG_CHROMEPROFILE:	doPrintShowChromeProfiles,
-      Cmd.ARG_CHROMESCHEMA:	doPrintShowChromeSchemas,
+      Cmd.ARG_CHROMESCHEMA:	doPrintShowChromePolicySchemas,
       Cmd.ARG_CHROMESNVALIDITY:	doPrintChromeSnValidity,
       Cmd.ARG_CHROMEVERSIONS:	doPrintShowChromeVersions,
       Cmd.ARG_CIGROUP:		doPrintCIGroups,
@@ -76220,7 +76294,7 @@ MAIN_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_CHROMENEEDSATTN:	doPrintShowChromeNeedsAttn,
       Cmd.ARG_CHROMEPOLICY:	doPrintShowChromePolicies,
       Cmd.ARG_CHROMEPROFILE:	doPrintShowChromeProfiles,
-      Cmd.ARG_CHROMESCHEMA:	doPrintShowChromeSchemas,
+      Cmd.ARG_CHROMESCHEMA:	doPrintShowChromePolicySchemas,
       Cmd.ARG_CHROMEVERSIONS:	doPrintShowChromeVersions,
       Cmd.ARG_CIGROUPMEMBERS:	doShowCIGroupMembers,
       Cmd.ARG_CIPOLICY:		doPrintShowCIPolicies,
