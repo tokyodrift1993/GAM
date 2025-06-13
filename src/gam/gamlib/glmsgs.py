@@ -140,6 +140,7 @@ SERVICE_ACCOUNT_PRIVATE_KEY_AGE = 'Service Account Private Key age: {0} days'
 SERVICE_ACCOUNT_SKIPPING_KEY_AGE_CHECK = 'Skipping Private Key age check: {0} rotation not necessary'
 UPDATE_PROJECT_TO_VIEW_MANAGE_SAKEYS = 'Please run "gam update project" to view/manage service account keys'
 DOMAIN_WIDE_DELEGATION_AUTHENTICATION = 'Domain-wide Delegation authentication'
+DEPRECATED_SCOPES = 'Deprecated scopes that GAM should NEVER have DwD access to'
 SCOPE_AUTHORIZATION_PASSED = '''All scopes PASSED!
 
 Service Account Client name: {0} is fully authorized.
@@ -309,6 +310,7 @@ INVALID_ATTENDEE_CHANGE = 'Invalid attendee change "{0}"'
 INVALID_CHARSET = 'Invalid charset "{0}"'
 INVALID_DATE_TIME_RANGE = '{0} {1} must be greater than/equal to {2} {3}'
 INVALID_ENTITY = 'Invalid {0}, {1}'
+INVALID_EVENT_TIMERANGE = '{0} {1} must be less than {2}'
 INVALID_FILE_SELECTION_WITH_ADMIN_ACCESS = 'Invalid file selection with adminaccess|asadmin'
 INVALID_GROUP = 'Invalid Group'
 INVALID_HTTP_HEADER = 'Invalid http header data: {0}'
