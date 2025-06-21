@@ -1,4 +1,4 @@
-This document describes the GAM command line syntax in modified BNF, see https://en.wikipedia.org/wiki/Backus-Naur_Form
+his document describes the GAM command line syntax in modified BNF, see https://en.wikipedia.org/wiki/Backus-Naur_Form
 Skip the History section and start reading at Introduction.
 
 Items on the command line are space separated, when an actual space character is required, it will be indicated by <Space>.
@@ -380,6 +380,8 @@ If an item contains spaces, it should be surrounded by ".
         domain:<DomainName>|domain|default
 <CalendarItem> ::= <EmailAddress>
 <ChannelCustomerID> ::= <String>
+<ChatEmojiName> ::= :<String>:
+<ChatEmoji> ::= emojiname <ChatEmojiName> | customemojis/<String>
 <ChatMember> ::= spaces/<String>/members/<String>
 <ChatMessage> ::= spaces/<String>/messages/<String>
 <ChatSpace> ::= spaces/<String> | space <String> | space spaces/<String>
@@ -664,6 +666,7 @@ If an item contains spaces, it should be surrounded by ".
         (gdoc|ghtml <UserGoogleDoc>)|
         (gcsdoc|gcshtml <StorageBucketObjectName>)
 <YouTubeChannelID> ::= <String>
+
 ## Lists of basic items
 
 <APIScopeURLList> ::= "<APIScopeURL>(,<APIScopeURL>)*"
@@ -2725,6 +2728,7 @@ gam print chromschemas [todrive <ToDriveAttribute>*]
         <ChromePolicySchemaFieldName>* [fields <ChromePolicySchemaFieldNameList>]
         [[formatjson [quotechar <Character>]]
 
+gam info chromeschema std <SchemaName>
 gam show chromeschemas std
         [filter <String>]
 
@@ -4436,13 +4440,14 @@ gam report usage customer [todrive <ToDriveAttribute>*]
         calendar|calendars|
         chat|
         chrome|
+        classroom|
         contextawareaccess|
         currents|gplus|google+|
         datastudio|
         devices|mobile|
         domain|
         drive|doc|docs|
-        gcp|
+        gcp|cloud|
         gemini|geminiforworkspace|
         groups|group|
         groupsenterprise|enterprisegroups|
@@ -4461,7 +4466,7 @@ gam report <ActivityApplicationName> [todrive <ToDriveAttribute>*]
         [(user all|<UserItem>)|(orgunit|org|ou <OrgUnitPath> [showorgunit])|(select <UserTypeEntity>)]
         [([start <Time>] [end <Time>])|(range <Time> <Time>)|
          yesterday|today|thismonth|(previousmonths <Integer>)]
-        [filtertime.* <Time>] [filter|filters <String>]
+        [filtertime.String> <Time>] [filter|filters <String>]
         [event|events <EventNameList>] [ip <String>]
         [groupidfilter <String>]
         [maxactivities <Number>] [maxevents <Number>] [maxresults <Number>]
@@ -5030,18 +5035,18 @@ gam <UserTypeEntity> delete permissions <SharedDriveEntityAdmin> <DriveFilePermi
 
 In these commands, the Google administrator named in oauth2.txt is used.
 
-gam copy teamdriveacls <SharedDriveEntity> to <SharedDriveEntity>
+gam copy shareddriveacls <SharedDriveEntity> to <SharedDriveEntity>
         [adminaccess|asadmin]
         [showpermissionsmessages [<Boolean>]]
         [excludepermissionsfromdomains|includepermissionsfromdomains <DomainNameList>]
         (mappermissionsdomain <DomainName> <DomainName>)*
-gam sync teamdriveacls <SharedDriveEntity> with <SharedDriveEntity>
+gam sync shareddriveacls <SharedDriveEntity> with <SharedDriveEntity>
         [adminaccess|asadmin]
         [showpermissionsmessages [<Boolean>]]
         [excludepermissionsfromdomains|includepermissionsfromdomains <DomainNameList>]
         (mappermissionsdomain <DomainName> <DomainName>)*
 
-gam print teamdriveacls [todrive <ToDriveAttribute>*]
+gam print shareddriveacls [todrive <ToDriveAttribute>*]
         [teamdriveadminquery|query <QueryTeamDrive>]
         [matchname <REMatchPattern>] [orgunit|org|ou <OrgUnitPath>]
         [user|group <EmailAddress> [checkgroups]] (role|roles <SharedDriveACLRoleList>)*
@@ -5049,7 +5054,7 @@ gam print teamdriveacls [todrive <ToDriveAttribute>*]
         [oneitemperrow] [<DrivePermissionsFieldName>*|(fields <DrivePermissionsFieldNameList>)]
         (addcsvdata <FieldName> <String>)*
         [formatjson [quotechar <Character>]]
-gam show teamdriveacls
+gam show shareddriveacls
         [teamdriveadminquery|query <QueryTeamDrive>]
         [matchname <REMatchPattern>] [orgunit|org|ou <OrgUnitPath>]
         [user|group <EmailAddress> [checkgroups]] (role|roles <SharedDriveACLRoleList>)*
@@ -5059,18 +5064,18 @@ gam show teamdriveacls
 
 In these commands, you specify an administrator and then indicate that you want domain administrator access with the adminaccess option.
 
-gam <UserTypeEntity> copy teamdriveacls <SharedDriveEntity> to <SharedDriveEntity>
+gam <UserTypeEntity> copy shareddriveacls <SharedDriveEntity> to <SharedDriveEntity>
         [adminaccess|asadmin]
         [showpermissionsmessages [<Boolean>]]
         [excludepermissionsfromdomains|includepermissionsfromdomains <DomainNameList>]
         (mappermissionsdomain <DomainName> <DomainName>)*
-gam <UserTypeEntity> sync teamdriveacls <SharedDriveEntity> with <SharedDriveEntity>
+gam <UserTypeEntity> sync shareddriveacls <SharedDriveEntity> with <SharedDriveEntity>
         [adminaccess|asadmin]
         [showpermissionsmessages [<Boolean>]]
         [excludepermissionsfromdomains|includepermissionsfromdomains <DomainNameList>]
         (mappermissionsdomain <DomainName> <DomainName>)*
 
-gam <UserTypeEntity> print teamdriveacls [todrive <ToDriveAttribute>*]
+gam <UserTypeEntity> print shareddriveacls [todrive <ToDriveAttribute>*]
         [adminaccess|asadmin] [teamdriveadminquery|query <QueryTeamDrive>]
         [matchname <REMatchPattern>] [orgunit|org|ou <OrgUnitPath>]
         [user|group <EmailAddress> [checkgroups]] (role|roles <SharedDriveACLRoleList>)*
@@ -5079,7 +5084,7 @@ gam <UserTypeEntity> print teamdriveacls [todrive <ToDriveAttribute>*]
         [shownopermissionsdrives false|true|only]
         (addcsvdata <FieldName> <String>)*
         [formatjson [quotechar <Character>]]
-gam <UserTypeEntity> show teamdriveacls
+gam <UserTypeEntity> show shareddriveacls
         [adminaccess|asadmin] [teamdriveadminquery|query <QueryTeamDrive>]
         [matchname <REMatchPattern>] [orgunit|org|ou <OrgUnitPath>]
         [user|group <EmailAddress> [checkgroups]] (role|roles <SharedDriveACLRoleList>)*
@@ -6435,6 +6440,22 @@ gam <UserTypeEntity> print chatevents [todrive <ToDriveAttribute>*]
         filter <String>
         [formatjson [quotechar <Character>]]
 
+<ChatEmojiName> ::= :[0-9a-z_-]+:
+<ChatEmoji> ::= emojiname <ChatEmojiName> | customemojis/<String>
+
+gam <UserTypeEntity> create chatemoji <ChatEmojiName>
+         ([drivedir|(sourcefolder <FilePath>)] [filename <FileNamePattern>])
+        [formatjson]
+gam <UserTypeEntity> delete chatemoji <ChatEmoji>
+gam <UserTypeEntity> info chatemoji <ChatEmoji>
+        [formatjson]
+gam <UserTypeEntity> show chatemojis
+        [showcreatedby any|me|others]
+        [formatjson]
+gam <UserTypeEntity> print chatemojis [todrive <ToDriveAttribute>*]
+        [showcreatedby any|me|others]
+        [formatjson [quotechar <Character>]]
+
 # Users - Drive
 
 <DriveFileOrderByFieldName> ::=
@@ -7203,7 +7224,8 @@ gam <UserTypeEntity> show filesharecounts
         owners|
         parents|
         size|
-        trashed
+        trashed|
+        webviewlink
 <FileTreeFieldNameList> ::= "<FileTreeFieldName>(,<FileTreeFieldName>)*"
 
 gam <UserTypeEntity> print filetree [todrive <ToDriveAttribute>*]
@@ -7396,10 +7418,12 @@ gam <UserTypeEntity> print filters [labelidsonly] [todrive <ToDriveAttribute>*]
 
 gam <UserTypeEntity> create form
         title <String> [description <String>] [isquiz [<Boolean>]] [<JSONData>]
+        [ispublished [<Boolean>] isacceptingresponses [<Boolean>]]
         [drivefilename <DriveFileName>] [<DriveFileParentAttribute>]
         [(csv [todrive <ToDriveAttribute>*]) | returnidonly]
 gam <UserTypeEntity> update form <DriveFileEntity>
         [title <String>] [description <String>] [isquiz [<Boolean>]] [<JSONData>]
+        [ispublished [<Boolean>] isacceptingresponses [<Boolean>]]
 
 gam <UserTypeEntity> print forms <DriveFileEntity> [todrive <ToDriveAttribute>*]
         (addcsvdata <FieldName> <String>)*
@@ -7591,48 +7615,61 @@ gam <UserTypeEntity> insert message
 
 gam <UserTypeEntity> archive messages <GroupItem>
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
          [quick|notquick] [doit] [max_to_archive <Number>])|(ids <MessageIDEntity>)
         [csv [todrive <ToDriveAttribute>*]]
 gam <UserTypeEntity> delete messages|threads
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
          [quick|notquick] [doit] [max_to_delete <Number>])|(ids <MessageIDEntity>)
         [csv [todrive <ToDriveAttribute>*]]
 gam <UserTypeEntity> modify messages|threads
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
          [quick|notquick] [doit] [max_to_modify <Number>])|(ids <MessageIDEntity>)
         ((addlabel <LabelName>)|(removelabel <LabelName>))+
         [csv [todrive <ToDriveAttribute>*]]
 gam <UserTypeEntity> spam messages|threads
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
          [quick|notquick] [doit] [max_to_spam <Number>])|(ids <MessageIDEntity>)
         [csv [todrive <ToDriveAttribute>*]]
 gam <UserTypeEntity> trash messages|threads
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
          [quick|notquick] [doit] [max_to_trash <Number>])|(ids <MessageIDEntity>)
         [csv [todrive <ToDriveAttribute>*]]
 gam <UserTypeEntity> untrash messages|threads
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
          [quick|notquick] [doit] [max_to_untrash <Number>])|(ids <MessageIDEntity>)
         [csv [todrive <ToDriveAttribute>*]]
 
 gam <UserTypeEntity> export message|messages
-        (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+ [quick|notquick] [doit] [max_to_export <Number>])|(ids <MessageIDEntity>)
+        (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
+         [quick|notquick] [doit] [max_to_export <Number>])|(ids <MessageIDEntity>)
         [targetfolder <FilePath>] [targetname <FileName>] [overwrite [<Boolean>]]
 gam <UserTypeEntity> export thread|threads
-        (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+ [quick|notquick] [doit] [max_to_export <Number>])|(ids <ThreadIDEntity>)
+        (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
+         [quick|notquick] [doit] [max_to_export <Number>])|(ids <ThreadIDEntity>)
         [targetfolder <FilePath>] [targetname <FileName>] [overwrite [<Boolean>]]
 
 gam <UserTypeEntity> forward message|messages recipient|to <RecipientEntity>
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
          [quick|notquick] [doit] [max_to_forward <Number>])|(ids <MessageIDEntity>)
         [subject <String>] [addorigfieldstosubject [<Boolean>]] [altcharset <String>]
 gam <UserTypeEntity> forward thread|thtreads recipient|to <RecipientEntity>
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])+
+         [labelids <LabelIDList>]
          quick|notquick] [doit] [max_to_forward <Number>])|(ids <ThreadIDEntity>)
         [subject <String>] [addorigfieldstosubject [<Boolean>]] [altcharset <String>]
 
 gam <UserTypeEntity> show messages|threads
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])*
+         [labelids <LabelIDList>]
          [quick|notquick] [max_to_show <Number>] [includespamtrash])|(ids <MessageIDEntity>)
         [labelmatchpattern <REMatchPattern>] [sendermatchpattern <REMatchPattern>]
         [countsonly|positivecountsonly] [useronly]
@@ -7645,6 +7682,7 @@ gam <UserTypeEntity> show messages|threads
             [uploadattachments [<DriveFileParentAttribute>]]]
 gam <UserTypeEntity> print messages|threads [todrive <ToDriveAttribute>*]
         (((query <QueryGmail> [querytime<String> <Date>]*) (matchlabel <LabelName>) [or|and])*
+         [labelids <LabelIDList>]
          [quick|notquick] [max_to_print <Number>] [includespamtrash])|(ids <MessageIDEntity>)
         [labelmatchpattern <REMatchPattern>] [sendermatchpattern <REMatchPattern>]
         [countsonly|positivecountsonly] [useronly]

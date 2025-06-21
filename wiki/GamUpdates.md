@@ -10,14 +10,104 @@ Add the `-s` option to the end of the above commands to suppress creating the `g
 
 See [Downloads-Installs-GAM7](https://github.com/GAM-team/GAM/wiki/Downloads-Installs) for Windows or other options, including manual installation
 
-### 7.08.03
+### 7.10.02
 
-Fixed bug in `gam <UserTypeEntity> check|update serviceaccount` where the first use of
-the command after project creation enabled the following scopes that should be off by default.
+Added option `labelids <LabelIdList>` to all commands that process messages;
+this option causes GAM to only return messages with labels that match all of the specified label IDs.
+
+Updated `gam <UserTypeEntity> print|show forms` to always display `isPublished` and
+`isAcceptingResponses` in `publishSettings/publishState` regardless of their value;
+the API doesn't return these values when they are False.
+
+### 7.10.01
+
+Added options `ispublished [<Boolean>]` and `isacceptingresponses [<Boolean>]` to
+`gam <UserTypeEntity> create|update form`.
+
+### 7.10.00
+
+Added commands to manage/display Chat Custom Emojis.
+
+* See: https://github.com/GAM-team/GAM/wiki/Users-Chat#manage-chat-emojis
+* See: https://github.com/GAM-team/GAM/wiki/Users-Chat#display-chat-emojis
+
+Updated `gam <UserItem> print|show chatspaces|chatmembers asadmin` to display
+the spaces in ascending display name order.
+
+### 7.09.07
+
+Added `webviewlink` to `<FileTreeFieldName>` for use in `gam <UserTypeEntity> print|show filetree`.
+
+### 7.09.06
+
+Upddated `gam print|show shareddrives`, `gam print|show shareddriveacls`, `gam print shareddriveorganizers`
+to display the Shared Drives in ascending name order; the API returns them in an unidentifiable order.
+
+### 7.09.05
+
+Improved output of `gam info|show chromeschemas [std]` to more accurately display the schemas.
+
+Fixed bugs in `gam update chromepolicy` that caused invalid error messaages.
+
+### 7.09.04
+
+Fixed bug in `gam whatis <EmailItem>` where the check for an invitable user always failed.
+
+Fixed bug in `gam print shareddriveorganizers` where no organizers were displayed when `domain` in `gam.cfg` was blank.
+
+Updated to Python 3.13.5
+
+### 7.09.03
+
+Updated `gam <UserTypeEntity> create focustime|outofoffice ... timerange <Time> <Time>` to check
+that the first `<Time>` is less than the second `Time`; previously the event was not created.
+
+For new installs the `enforce_expansive_access` Boolean variable in `gam.cfg` now defaults to True.
+For existing installations, if `enforce_expansive_access` has not been added to `gam.cfg`,
+a default value of True will be used.
+
+### 7.09.02
+
+Added command `gam info chromeschema std <SchemaName>` to display a Chrome policy schema in the same format as Legacy GAM.
+
+Improved output of `gam show chromeschemas [std]` and `gam info chromeschema [std]` to more accurately display the schemas.
+
+### 7.09.01
+
+Fixed bug in `gam <UserTypeEntity> print diskusage` where the `ownedByMe` column was
+blank for the top folder.
+
+Fixed bug in `gam update chromepolicy` where the following error was generated
+when updating policies with simple numerical values.
 ```
-Identity and Access Management API
-Youtube API - read only
+ERROR: Missing argument: Expected <value>"
 ```
+
+### 7.09.00
+
+Removed the overly broad service account `IAM and Access Management API` scope `https://www.googleapis.com/auth/cloud-platform`
+from DWD. The `gam <UserTypeEntity> check|Update serviceaccount` commands issue an error message if this scope
+is enabled prompting you to update your service account authorization so that the scope can be removed.
+
+GAM commands that need IAM access now use the more limited scope `https://www.googleapis.com/auth/iam` in a non-DWD manner.
+
+Added `enforce_expansive_access` Boolean variable to `gam.cfg` that provides the default value
+for option `enforceexpansiveaccess` in all commands that delete or update drive file ACLs/permissions.
+It's default value is False.
+```
+gam <UserTypeEntity> delete permissions
+gam <UserTypeEntity> delete drivefileacl
+gam <UserTypeEntity> update drivefileacl
+gam <UserTypeEntity> copy drivefile
+gam <UserTypeEntity> move drivefile
+gam <UserTypeEntity> transfer ownership
+gam <UserTypeEntity> claim ownership
+gam <UserTypeEntity> transfer drive
+```
+
+Fixed bug in `gam print shareddriveorganizers` that caused a trap when an organizer was a deleted user.
+
+Updated to Python 3.13.4
 
 ### 7.08.02
 
