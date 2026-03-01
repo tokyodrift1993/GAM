@@ -1016,7 +1016,7 @@ jobs:
           run_gam user $newuser delete license workspaceenterpriseplus
           echo finish
           run_gam config enable_dasa true save
-          run_gam whatis $newuser || if [ $? != 20 ]; then exit $?; fi # expect a 20 return code (is a user)
+          $gam whatis $newuser || if [ $? != 20 ]; then exit $?; fi # expect a 20 return code (is a user)
           run_gam user $gam_user show tokens
           run_gam config enable_dasa false save
           download_dir="${RUNNER_TEMP}/TEMP_DELETE_ME"
