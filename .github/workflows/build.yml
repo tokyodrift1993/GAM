@@ -1088,14 +1088,13 @@ jobs:
         uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
           path: gam-binaries/
-          merge-multiple: true
 
       - name: VirusTotal Scan
         uses: crazy-max/ghaction-virustotal@d34968c958ae283fe976efed637081b9f9dcf74f # 4.2.0
         with:
           vt_api_key: ${{ secrets.VT_API_KEY }}
           files: |
-            gam-binaries/*
+            gam-binaries/*/*
 
       - name: Set datetime version string
         id: dateversion
@@ -1112,6 +1111,6 @@ jobs:
           tag_name: "${{ steps.dateversion.outputs.dateversion }}"
           fail_on_unmatched_files: true
           files: |
-            gam-binaries/*
+            gam-binaries/*/*
 
         
