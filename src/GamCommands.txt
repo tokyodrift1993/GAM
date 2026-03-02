@@ -4568,8 +4568,8 @@ gam check ou|org <OrgUnitItem> [todrive <ToDriveAttribute>*]
         usedriverlessconfig|
 <PrinterFieldNameList> ::= "<PrinterFieldName>(,<PrinterFieldName>)*"
 
-gam create printer <PrinterAttribute>+
-gam update printer <PrinterID> <PrinterAttribute>+
+gam create printer <PrinterAttribute>+ [nodetails|returnidonly]
+gam update printer <PrinterID> <PrinterAttribute>+ [nodetails|returnidonly]
 gam delete printer
         <PrinterIDList>|
         <FileSelector>|

@@ -25,7 +25,7 @@ https://github.com/GAM-team/GAM/wiki
 """
 
 __author__ = 'GAM Team <google-apps-manager@googlegroups.com>'
-__version__ = '7.34.11'
+__version__ = '7.34.12'
 __license__ = 'Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)'
 
 # pylint: disable=wrong-import-position
@@ -31656,6 +31656,7 @@ UPDATE_PRINTER_JSON_SKIP_FIELDS = ['id', 'name', 'createTime', 'orgUnitId', 'org
 def _getPrinterAttributes(cd, jsonDeleteFields):
   '''get printer attributes for create/update commands'''
   body = {}
+  returnIdOnly = False
   showDetails = True
   while Cmd.ArgumentsRemaining():
     myarg = getArgument()
@@ -31674,13 +31675,15 @@ def _getPrinterAttributes(cd, jsonDeleteFields):
       body['useDriverlessConfig'] = getBoolean()
     elif myarg == 'nodetails':
       showDetails = False
+    elif myarg == 'returnidonly':
+      returnIdOnly = True
     elif myarg == 'json':
       body.update(getJSON(jsonDeleteFields))
     else:
       unknownArgumentExit()
   if body.get('makeAndModel'):
     body.pop('useDriverlessConfig', None)
-  return (body, showDetails)
+  return (body, showDetails, returnIdOnly)
 
 PRINTER_FIELDS_CHOICE_MAP = {
   'auxiliarymessages': 'auxiliaryMessages',
@@ -31726,33 +31729,39 @@ def _showPrinter(cd, printer, FJQC, orgUnitId=None, showInherited=False, i=0, co
   showJSON(None, printer, timeObjects=PRINTER_TIME_OBJECTS)
   Ind.Decrement()
 
-# gam create printer <PrinterAttribute>+ [nodetails]
+# gam create printer <PrinterAttribute>+ [nodetails|returnidonly]
 def doCreatePrinter():
   cd = buildGAPIObject(API.DIRECTORY)
   parent = _getCustomersCustomerIdWithC()
-  body, showDetails = _getPrinterAttributes(cd, CREATE_PRINTER_JSON_SKIP_FIELDS)
+  body, showDetails, returnIdOnly = _getPrinterAttributes(cd, CREATE_PRINTER_JSON_SKIP_FIELDS)
   if not body.get('orgUnitId'):
     missingArgumentExit('orgunit')
   try:
     printer = callGAPI(cd.customers().chrome().printers(), 'create',
                        throwReasons=[GAPI.INVALID_ARGUMENT, GAPI.PERMISSION_DENIED],
                        parent=parent, body=body)
+    if returnIdOnly:
+      writeStdout(f"{printer['id']}\n")
+      return
     entityActionPerformed([Ent.PRINTER, printer['id']])
     if showDetails:
       _showPrinter(cd, printer, None)
   except (GAPI.invalidArgument, GAPI.permissionDenied) as e:
     entityActionFailedWarning([Ent.PRINTER, None], str(e))
 
-# gam update printer <PrinterID> <PrinterAttribute>+ [nodetails]
+# gam update printer <PrinterID> <PrinterAttribute>+ [nodetails|returnidonly]
 def doUpdatePrinter():
   name, printerId, cd = _getPrinterID()
-  body, showDetails = _getPrinterAttributes(cd, UPDATE_PRINTER_JSON_SKIP_FIELDS)
+  body, showDetails, returnIdOnly = _getPrinterAttributes(cd, UPDATE_PRINTER_JSON_SKIP_FIELDS)
   updateMask = ','.join(list(body.keys()))
   # note clearMask seems unnecessary. Updating field to '' clears it.
   try:
     printer = callGAPI(cd.customers().chrome().printers(), 'patch',
                        throwReasons=[GAPI.NOT_FOUND, GAPI.INVALID_ARGUMENT, GAPI.PERMISSION_DENIED],
                        name=name, updateMask=updateMask, body=body)
+    if returnIdOnly:
+      writeStdout(f"{printer['id']}\n")
+      return
     entityActionPerformed([Ent.PRINTER, printerId])
     if showDetails:
       _showPrinter(cd, printer, None)
@@ -71340,7 +71349,7 @@ def updatePhoto(users):
                  bailOnInternalError=True,
                  throwReasons=[GAPI.USER_NOT_FOUND, GAPI.FORBIDDEN, GAPI.PHOTO_NOT_FOUND, GAPI.INTERNAL_ERROR],
                  userKey=user)
-      except (GAPI.photoNotFound, GAPI.internalError) as e:
+      except (GAPI.photoNotFound, GAPI.internalError):
         pass
       callGAPI(cd.users().photos(), 'update',
                throwReasons=[GAPI.USER_NOT_FOUND, GAPI.FORBIDDEN, GAPI.INVALID_INPUT, GAPI.CONDITION_NOT_MET],
