@@ -920,7 +920,7 @@ jobs:
           for i in {1..10}; do
             echo "${newbase}-bulkuser-$i" >> sample.csv;
           done
-          driveid=$(run_gam user $gam_user add shareddrive "${newbase}" returnidonly)
+          driveid=$($gam user $gam_user add shareddrive "${newbase}" returnidonly)
           echo "Created shared drive ${driveid}"
           run_gam create user $newuser firstname GHA lastname $JID displayname "Github Actions ${JID}" password random recoveryphone 12125121110 recoveryemail jay0lee@gmail.com gha.jid $JID languages en+,en-GB- ou "${newou}"
           run_gam user $newuser add license workspaceenterpriseplus
