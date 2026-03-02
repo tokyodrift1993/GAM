@@ -99,7 +99,7 @@ Typically, you will enclose the entire list in double quotes and quote each item
 ## Manage printers
 When creating a printer you must specify: `displayname`, `ou`, `uri` and `makeandmodel` or `driverless`.
 ```
-gam create printer <PrinterAttribute>+ [nodetails|returnidonly]] 
+gam create printer <PrinterAttribute>+ [nodetails|returnidonly]
 gam update printer <PrinterID> <PrinterAttribute>+ [nodetails|returnidonly]
 gam delete printer
         <PrinterIDList>|
