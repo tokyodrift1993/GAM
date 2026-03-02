@@ -108,7 +108,16 @@ gam delete printer
 ```
 By default, when a printer is created/updated, GAM outputs details of the printer.
 * `nodetails` - Suppress the datails output.
-* `returnidonly` - Display just the printer ID.
+* `returnidonly` - Display just the printer ID of the created printer as output
+
+To retrieve the printer ID with `returnidonly`:
+```
+Linux/MacOS
+printerId=$(gam create printer ... returnidonly)
+Windows PowerShell
+$printerId = & gam create printer ... returnidonly
+```
+The printer ID will only be valid when the return code of the command is 0; program accordingly.
 
 ## Display printers
 Display information about a single printer.
