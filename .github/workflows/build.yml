@@ -914,29 +914,29 @@ jobs:
 
           # cleanup old runs
           run_gam config enable_dasa false save
-          run_gam config csv_output_row_filter "name:regex:gha_test_${JID}_" redirect csv vh.csv print vaultholds
-          run_gam -a "0 55" csv vh.csv gam delete vaulthold "id:~~holdId~~" matter "id:~~matterId~~" 
-          run_gam config csv_output_row_filter "name:regex:gha_test_${JID}_" redirect csv vm-open.csv print vaultmatters matterstate OPEN
-          run_gam csv vm-open.csv gam update vaultmatter "id:~~matterId~~" action close
-          run_gam config csv_output_row_filter "name:regex:gha_test_${JID}_" redirect csv vm-closed.csv print vaultmatters matterstate CLOSED
-          run_gam csv vm-closed.csv gam update vaultmatter "id:~~matterId~~" action delete
-          run_gam config csv_output_row_filter "Emails.1.address:regex:^gha_test-${JID}_" redirect csv contacts.csv print contacts
-          run-gam csv contacts.csv gam delete contact ~ContactID
+          run_gam config csv_output_row_filter "name:regex:gha_test_${JID}_" redirect csv ./vh.csv print vaultholds
+          run_gam -a "0 55" csv ./vh.csv gam delete vaulthold "id:~~holdId~~" matter "id:~~matterId~~" 
+          run_gam config csv_output_row_filter "name:regex:gha_test_${JID}_" redirect csv ./vm-open.csv print vaultmatters matterstate OPEN
+          run_gam csv ./vm-open.csv gam update vaultmatter "id:~~matterId~~" action close
+          run_gam config csv_output_row_filter "name:regex:gha_test_${JID}_" redirect csv ./vm-closed.csv print vaultmatters matterstate CLOSED
+          run_gam csv ./vm-closed.csv gam update vaultmatter "id:~~matterId~~" action delete
+          run_gam config csv_output_row_filter "Emails.1.address:regex:^gha_test-${JID}_" redirect csv ./contacts.csv print contacts
+          run-gam csv ./contacts.csv gam delete contact ~ContactID
           run_gam config enable_dasa true save
-          run_gam config csv_output_row_filter "name:regex:gha_test_${JID}_" redirect csv features.csv print features
-          run_gam csv features.csv gam delete feature ~name
-          run_gam config csv_output_row_filter "name:regex:^gha_test_${JID}_" redirect csv sd.csv user $gam_user print shareddrives asadmin
-          run_gam csv sd.csv gam user $gam_user delete shareddrive ~id nukefromorbit
-          run_gam redirect csv users.csv print users query "gha.jid=$JID"
-          run_gam csv users.csv gam delete user ~primaryEmail
-          run_gam config csv_output_row_filter "name:regex:^gha_test_${JID}_" redirect csv ous.csv print ous fromparent "aaaGithub Actions"
-          run_gam csv ous.csv gam delete ou ~orgUnitId
-          run_gam config csv_output_row_filter "email:regex:^gha_test_${JID}_" redirect csv cigroups.csv print cigroups
-          run_gam csv cigroups.csv gam delete cigroup ~email
-          run_gam config csv_output_row_filter "resourceId:regex:^gha_test_${JID}_" redirect csv resources.csv print resources
-          run_gam csv resources gam delete resource ~resourceId
-          run_gam config csv_output_row_filter "buildingId:regex:^gha_test_${JID}_" redirect csv buildings.csv print buildings
-          run_gam csv buildings.csv gam delete building ~buildingId
+          run_gam config csv_output_row_filter "name:regex:gha_test_${JID}_" redirect csv ./features.csv print features
+          run_gam csv ./features.csv gam delete feature ~name
+          run_gam config csv_output_row_filter "name:regex:^gha_test_${JID}_" redirect csv ./sd.csv user $gam_user print shareddrives asadmin
+          run_gam csv ./sd.csv gam user $gam_user delete shareddrive ~id nukefromorbit
+          run_gam redirect csv ./users.csv print users query "gha.jid=$JID"
+          run_gam csv ./users.csv gam delete user ~primaryEmail
+          run_gam config csv_output_row_filter "name:regex:^gha_test_${JID}_" redirect csv ./ous.csv print ous fromparent "aaaGithub Actions"
+          run_gam csv ./ous.csv gam delete ou ~orgUnitId
+          run_gam config csv_output_row_filter "email:regex:^gha_test_${JID}_" redirect csv ./cigroups.csv print cigroups
+          run_gam csv ./cigroups.csv gam delete cigroup ~email
+          run_gam config csv_output_row_filter "resourceId:regex:^gha_test_${JID}_" redirect csv ./resources.csv print resources
+          run_gam csv ./resources.csv gam delete resource ~resourceId
+          run_gam config csv_output_row_filter "buildingId:regex:^gha_test_${JID}_" redirect csv ./buildings.csv print buildings
+          run_gam csv ./buildings.csv gam delete building ~buildingId
 
           echo "Creating OrgUnit ${newou}"
           run_gam create ou "${newou}"
@@ -1005,8 +1005,8 @@ jobs:
           run_gam -a "0 60" users "$newbase-bulkuser-4 $newbase-bulkuser-5 $newbase-bulkuser-6" trash messages query in:anywhere maxtotrash 99999 doit
           run_gam -a "0 60"  users "$newbase-bulkuser-7 $newbase-bulkuser-8 $newbase-bulkuser-9" modify messages query in:anywhere maxtomodify 99999 addlabel IMPORTANT addlabel STARRED doit
           run_gam user $newuser delete label --ALL_LABELS--
-          run_gam config csv_output_row_filter "name:regex:gha-test-${JID}" redirect csv features.csv print features
-          run_gam csv features.csv gam delete feature ~name
+          run_gam config csv_output_row_filter "name:regex:gha-test-${JID}" redirect csv ./features.csv print features
+          run_gam csv ./features.csv gam delete feature ~name
           run_gam create feature name VC-$newbase
           run_gam create feature name Whiteboard-$newbase
           run_gam create building "My Building - $newbase" id $newbuilding floors 1,2,3,4,5,6,7,8,9,10,11,12,14,15 description "No 13th floor here..."
@@ -1014,14 +1014,14 @@ jobs:
           run_gam info resource $newresource
           run_gam user $newuser add drivefile drivefilename "TPS Reports" mimetype gfolder
           run_gam user $newuser show filelist
-          run_gam redirect csv cal-acl.csv calendar $gam_user printacl
-          run_gam csv cal-acl.csv gam calendar $gam_user delete ~id # clear ACLs
+          run_gam redirect csv ./cal-acl.csv calendar $gam_user printacl
+          run_gam csv ./cal-acl.csv gam calendar $gam_user delete ~id # clear ACLs
           run_gam calendar $gam_user add read domain
           run_gam calendar $gam_user add freebusy default
           run_gam calendar $gam_user add editor $newuser
           run_gam calendar $gam_user showacl
-          run_gam redirect csv cal-acl.csv calendar $gam_user printacl
-          run_gam csv cal-acl.csv gam calendar $gam_user delete ~id
+          run_gam redirect csv ./cal-acl.csv calendar $gam_user printacl
+          run_gam csv ./cal-acl.csv gam calendar $gam_user delete ~id
           run_gam calendar $gam_user addevent summary "GHA test event" start +1h end +2h attendee $newgroup hangoutsmeet guestscanmodify true sendupdates all
           run_gam calendar $gam_user printevents after -0d
           run_gam config enable_dasa false save
@@ -1031,8 +1031,8 @@ jobs:
           run_gam print vaultholds matter $matterid
           run_gam print vaultcount matter $matterid corpus mail everyone todrive tdnobrowser
           run_gam create vaultexport matter $matterid name "GHA export $newbase" corpus mail ou "$newou"
-          run_gam redirect csv exports.csv print exports matter $matterid
-          run_gam csv exports.csv gam info export $matterid id:~~id~~
+          run_gam redirect csv ./exports.csv print exports matter $matterid
+          run_gam csv ./exports.csv gam info export $matterid id:~~id~~
           run_gam config enable_dasa true save
           run_gam csv sample.csv gam user ~email add calendar id:$newresource
           run_gam delete resource $newresource
@@ -1050,22 +1050,22 @@ jobs:
           run_gam config enable_dasa false save
           download_dir="${RUNNER_TEMP}/TEMP_DELETE_ME"
           mkdir -v "$download_dir"
-          run_gam redirect csv exports.csv print exports matter $matterid
-          run_gam csv exports.csv gam download export $matterid id:~~id~~ targetfolder "$download_dir"
+          run_gam redirect csv ./exports.csv print exports matter $matterid
+          run_gam csv ./exports.csv gam download export $matterid id:~~id~~ targetfolder "$download_dir"
           rm -rvf "$download_dir"
           run_gam delete hold "GHA hold $newbase" matter $matterid
           run_gam update matter $matterid action close
           run_gam update matter $matterid action delete
           # shakes off vault hold on user so we can delete
-          run_gam redirect csv users.csv print users query "email:${newuser}" orgunitpath
-          run-gam csv users.csv gam update user ~primaryEmail ou ~orgUnitPath
+          run_gam redirect csv ./users.csv print users query "email:${newuser}" orgunitpath
+          run-gam csv ./users.csv gam update user ~primaryEmail ou ~orgUnitPath
           run_gam user $newuser show holds || if [ $? != 55 ]; then exit $?; fi # expect a 55 return code
           export sn="$JID$JID$JID$JID-$(openssl rand -base64 32 | sed 's/[^a-zA-Z0-9]//g')"
           run_gam create device serialnumber $sn devicetype android
           run_gam delete contacts emailmatchpattern "^${newbase}@example.com$"
           run_gam config enable_dasa true save
-          run_gam redirect csv users.csv print users query "gha.jid=$JID"
-          run-gam -a "0 50" csv users.csv gam delete user ~primaryEmail
+          run_gam redirect csv ./users.csv print users query "gha.jid=$JID"
+          run-gam -a "0 50" csv ./users.csv gam delete user ~primaryEmail
           run_gam print mobile
           run_gam print devices clientstates
           run_gam print browsers
@@ -1077,12 +1077,12 @@ jobs:
           #run_gam report users fields accounts:is_less_secure_apps_access_allowed,gmail:last_imap_time,gmail:last_pop_time filters "accounts:last_login_time>2025-01-01T00:00:00.000Z" todrive tdnobrowser
           run_gam report users todrive tdnobrowser
           run_gam report admin start -3d todrive tdnobrowser
-          run_gam redirect csv devices.csv print devices nopersonaldevices nodeviceusers filter "serial:$JID$JID$JID$JID-"
-          run_gam csv devices.csv gam delete device id ~name
+          run_gam redirect csv ./devices.csv print devices nopersonaldevices nodeviceusers filter "serial:$JID$JID$JID$JID-"
+          run_gam csv ./devices.csv gam delete device id ~name
           run_gam config enable_dasa false save
           run_gam print userinvitations
-          run_gam redirect csv invitations.csv print userinvitations
-          run-gam csv invitations.csv gam send userinvitation ~name
+          run_gam ./redirect csv ./invitations.csv print userinvitations
+          run-gam csv ./invitations.csv gam send userinvitation ~name
           run_gam config enable_dasa false save
           run_gam create caalevel "zzz_${newbase}" basic condition ipsubnetworks 1.1.1.1/32,2.2.2.2/32 endcondition
           run_gam print caalevels
