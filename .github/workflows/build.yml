@@ -1081,7 +1081,7 @@ jobs:
           run_gam csv ./devices.csv gam delete device id ~name
           run_gam config enable_dasa false save
           run_gam print userinvitations
-          run_gam ./redirect csv ./invitations.csv print userinvitations
+          run_gam redirect csv ./invitations.csv print userinvitations
           run_gam csv ./invitations.csv gam send userinvitation ~name
           run_gam config enable_dasa false save
           run_gam create caalevel "zzz_${newbase}" basic condition ipsubnetworks 1.1.1.1/32,2.2.2.2/32 endcondition
