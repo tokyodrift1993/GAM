@@ -10,6 +10,13 @@ Add the `-s` option to the end of the above commands to suppress creating the `g
 
 See [Downloads-Installs-GAM7](https://github.com/GAM-team/GAM/wiki/Downloads-Installs) for Windows or other options, including manual installation
 
+### 7.34.12
+
+Fixed build errors that prevented Windows zip files from being created.
+
+Added option `returnidonly` to `gam create|update printer` that causes GAM to return just the ID
+of the printer.
+
 ### 7.34.11
 
 Updated gam-install.sh script for macOS/Linux to properly config GAM when the answer to the following question is No.
