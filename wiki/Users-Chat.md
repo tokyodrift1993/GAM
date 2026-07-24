@@ -484,7 +484,7 @@ gam <UserTypeEntity> update chatavailability
         [formatjson]
 ```
 ## Display Chat User Availability
-### Display information about a user's chat availabiloty
+### Display information about a user's chat availability
 
 ```
 gam <UserTypeEntity> show chatavailability
