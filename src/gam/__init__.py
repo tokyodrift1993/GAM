@@ -27261,7 +27261,8 @@ def updateChatAvailability(users):
                                 name='users/me/availability', body=customBody, updateMask='customStatus')
       if availability:
         if 'customStatus' in availability:
-          availability['customStatus']['emoji']['hex'] = f'U+{ord(availability['customStatus']['emoji']['unicode']):X}'
+          emoji = availability['customStatus']['emoji']['unicode']
+          availability['customStatus']['emoji']['hex'] = f'U+{ord(emoji):X}'
         _showChatItem(availability, Ent.CHAT_AVAILABILITY, FJQC, i, count, altName=user)
     except (GAPI.notFound, GAPI.invalidArgument, GAPI.permissionDenied) as e:
       exitIfChatNotConfigured(chat, kvList, str(e), i, count)
