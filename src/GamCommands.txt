@@ -6569,6 +6569,20 @@ gam <UserTypeEntity> print focustime|outofoffice|workinglocation
 <ChatMessageID> ::= client-<String>
         <String> must contain only lowercase letters, numbers, and hyphens up to 56 characters in length.
 
+gam <UserTypeEntity> update chatavailability
+        [(active (expiretime <Time>)|(ttl <Integer>) |
+         away |
+         (dnd (expiretime <Time>)|(ttl <Integer>))]
+        [(custom <Text> <EmojiString> (customexpiretime <Time>)|(customttl <Integer>)) |
+         clearcustom]
+        [formatjson]
+
+gam <UserTypeEntity> show chatavailability
+        [formatjson]
+
+gam <UserTypeEntity> print chatavailability [todrive <ToDriveAttribute>*]
+        [formatjson [quotechar <Character>]]
+
 gam <UserTypeEntity> create chatspace
         [type <ChatSpaceType>] [announcement|collaboration]
         [restricted|(audience <String>)]

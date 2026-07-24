@@ -25,7 +25,7 @@ https://github.com/GAM-team/GAM/wiki
 """
 
 __author__ = 'GAM Team <google-apps-manager@googlegroups.com>'
-__version__ = '7.46.11'
+__version__ = '7.47.00'
 __license__ = 'Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)'
 
 # pylint: disable=wrong-import-position
@@ -218,6 +218,7 @@ SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = 3600
 SECONDS_PER_DAY = 86400
 SECONDS_PER_WEEK = 604800
+SECONDS_PER_YEAR = 31536000
 MAX_GOOGLE_SHEET_CELLS = 10000000 # See https://support.google.com/drive/answer/37603
 MAX_LOCAL_GOOGLE_TIME_OFFSET = 30
 SHARED_DRIVE_MAX_FILES_FOLDERS = 500000
@@ -27121,31 +27122,39 @@ def _cleanChatSpace(space):
 def _cleanChatMessage(message):
   message.pop('cards', None)
 
-CHAT_TIME_OBJECTS = {'createTime', 'deleteTime', 'eventTime', 'lastActiveTime', 'lastUpdateTime'}
+CHAT_TIME_OBJECTS = {'createTime', 'deleteTime', 'eventTime',
+                     'expirationTime', 'expireTime',
+                     'lastActiveTime', 'lastUpdateTime'}
 
-def _showChatItem(citem, entityType, FJQC, i=0, count=0):
+def _showChatItem(citem, entityType, FJQC, i=0, count=0, altName=None):
   if entityType == Ent.CHAT_SPACE:
     _cleanChatSpace(citem)
     dictObjectsKey = {None: 'displayName'}
   elif entityType == Ent.CHAT_MESSAGE:
     _cleanChatMessage(citem)
     dictObjectsKey = {None: 'text'}
+  elif entityType == Ent.CHAT_AVAILABILITY:
+    dictObjectsKey = {None: 'state'}
   else:
     dictObjectsKey={}
   if FJQC.formatJSON:
     printLine(json.dumps(cleanJSON(citem, timeObjects=CHAT_TIME_OBJECTS), ensure_ascii=False, sort_keys=True))
     return
-  printEntity([entityType, citem['name']], i, count)
+  printEntity([entityType, citem['name'] if not altName else altName], i, count)
   Ind.Increment()
   showJSON(None, citem, timeObjects=CHAT_TIME_OBJECTS, dictObjectsKey=dictObjectsKey)
   Ind.Decrement()
 
 def _printChatItem(user, citem, parent, entityType, csvPF, FJQC, addCSVData=None):
+  jsonKey = 'name'
   if entityType == Ent.CHAT_SPACE:
     _cleanChatSpace(citem)
     baserow = {'User': user} if user is not None else {}
   elif entityType in {Ent.CHAT_SECTION, Ent.CHAT_SECTION_ITEM}:
     baserow = {'User': user}
+  elif entityType == Ent.CHAT_AVAILABILITY:
+    baserow = {'User': user}
+    jsonKey = 'state'
   elif entityType == Ent.CHAT_EMOJI:
     baserow = {'User': user, 'name': citem['name'], 'emojiName': citem['emojiName']}
   else:
@@ -27163,9 +27172,135 @@ def _printChatItem(user, citem, parent, entityType, csvPF, FJQC, addCSVData=None
     csvPF.WriteRowTitles(row)
   elif csvPF.CheckRowTitles(row):
     row = baserow.copy()
-    row.update({'name': citem['name'],
+    row.update({jsonKey: citem[jsonKey],
                 'JSON': json.dumps(cleanJSON(citem, timeObjects=CHAT_TIME_OBJECTS), ensure_ascii=False, sort_keys=True)})
     csvPF.WriteRowNoFilter(row)
+
+CHAT_AVAILABILITY_OPTIONS_MAP = {
+  'active': 'markAsActive',
+  'away': 'markAsAway',
+  'dnd': 'markAsDoNotDisturb',
+  'donotdisturb': 'markAsDoNotDisturb',
+  }
+
+EMOJIHEX_FORMAT_REQUIRED = '^U+[0-9a-fA-F]{5}$'
+
+# gam <UserTypeEntity> update chatavailability
+#	[(active (expiretime <Time>)|(ttl <Integer>) |
+#	 away |
+#	 (dnd (expiretime <Time>)|(ttl <Integer>))]
+#	[(custom <Text> <EmojiString> (customexpiretime <Time>)|(customttl <Integer>)) |
+#	 clearcustom]
+#	[formatjson]
+def updateChatAvailability(users):
+  FJQC = FormatJSONQuoteChar()
+  availability = function = None
+  body = {}
+  customBody = {}
+  customExpireTime = customTTL = stateExpireTime = stateTTL = None
+  while Cmd.ArgumentsRemaining():
+    myarg = getArgument()
+    if myarg in CHAT_AVAILABILITY_OPTIONS_MAP:
+      function = CHAT_AVAILABILITY_OPTIONS_MAP[myarg]
+    elif myarg == 'expiretime':
+      stateExpireTime = getTimeOrDeltaFromNow()
+      stateTTL = None
+    elif myarg == 'ttl':
+      stateTTL = f'{getInteger(minVal=0, maxVal=SECONDS_PER_YEAR)}s'
+      stateExpireTime = None
+    elif myarg == 'custom':
+      customBody = {'customStatus': {'text': getString(Cmd.OB_STRING, minLen=1, maxLen=64)}}
+      hexCode = getString(Cmd.OB_STRING, minLen=4, maxLen=7).upper()
+      if hexCode.startswith('U+'):
+        hexCode = hexCode[2:]
+      try:
+        unicodeChar = chr(int(hexCode, 16))
+      except ValueError:
+        Cmd.Backup()
+        invalidArgumentExit(EMOJIHEX_FORMAT_REQUIRED)
+      customBody['customStatus']['emoji'] = {'unicode': unicodeChar}
+    elif myarg == 'customexpiretime':
+      customExpireTime = getTimeOrDeltaFromNow()
+      customTTL = None
+    elif myarg == 'customttl':
+      customTTL = f'{getInteger(minVal=0, maxVal=SECONDS_PER_YEAR)}s'
+      customExpireTime = None
+    elif myarg == 'clearcustom':
+      customTTL = '0s'
+      customBody = {'customStatus': {'text': ' ', 'emoji': {'unicode': chr(int('1F434', 16))}}}
+    else:
+      FJQC.GetFormatJSON(myarg)
+  if function in {'markAsActive', 'markAsDoNotDisturb'}:
+    if stateExpireTime is not None:
+      body['expireTime'] = stateExpireTime
+    elif stateTTL is not None:
+      body['ttl'] = stateTTL
+    else:
+      missingArgumentExit('expiretime|ttl')
+  if customBody:
+    if customExpireTime is not None:
+      customBody['customStatus']['expireTime'] = customExpireTime
+    elif customTTL is not None:
+      customBody['customStatus']['ttl'] = customTTL
+    else:
+      missingArgumentExit('customexpiretime|customttl')
+  i, count, users = getEntityArgument(users)
+  for user in users:
+    i += 1
+    user, chat, kvList = buildChatServiceObject(API.CHAT_AVAILABILITY, user, i, count)
+    if not chat:
+      continue
+    try:
+      if function is not None:
+        availability = callGAPI(chat.users().availability(), function,
+                                throwReasons=[GAPI.NOT_FOUND, GAPI.INVALID_ARGUMENT, GAPI.PERMISSION_DENIED],
+                                name='users/me/availability', body=body)
+      if customBody:
+        availability = callGAPI(chat.users().availability(), 'patch',
+                                throwReasons=[GAPI.NOT_FOUND, GAPI.INVALID_ARGUMENT, GAPI.PERMISSION_DENIED],
+                                name='users/me/availability', body=customBody, updateMask='customStatus')
+      if availability:
+        if 'customStatus' in availability:
+          availability['customStatus']['emoji']['hex'] = f'U+{ord(availability['customStatus']['emoji']['unicode']):X}'
+        _showChatItem(availability, Ent.CHAT_AVAILABILITY, FJQC, i, count, altName=user)
+    except (GAPI.notFound, GAPI.invalidArgument, GAPI.permissionDenied) as e:
+      exitIfChatNotConfigured(chat, kvList, str(e), i, count)
+
+# gam <UserTypeEntity> show chatavailability
+#	[formatjson]
+# gam <UserTypeEntity> print chatavailability [todrive <ToDriveAttribute>*]
+#	[formatjson [quotechar <Character>]]
+def printShowChatAvailability(users):
+  csvPF = CSVPrintFile(['User', 'state']) if Act.csvFormat() else None
+  FJQC = FormatJSONQuoteChar(csvPF)
+  while Cmd.ArgumentsRemaining():
+    myarg = getArgument()
+    if csvPF and myarg == 'todrive':
+      csvPF.GetTodriveParameters()
+    else:
+      FJQC.GetFormatJSONQuoteChar(myarg, True)
+  i, count, users = getEntityArgument(users)
+  for user in users:
+    i += 1
+    user, chat, kvList = buildChatServiceObject(API.CHAT_AVAILABILITY, user, i, count)
+    if not chat:
+      continue
+    try:
+      availability = callGAPI(chat.users().availability(), 'get',
+                              throwReasons=[GAPI.NOT_FOUND, GAPI.INVALID_ARGUMENT, GAPI.PERMISSION_DENIED, GAPI.FAILED_PRECONDITION],
+                              name='users/me/availability')
+      if 'customStatus' in availability:
+        availability['customStatus']['emoji']['hex'] = f'U+{ord(availability['customStatus']['emoji']['unicode']):X}'
+      if not csvPF:
+        _showChatItem(availability, Ent.CHAT_AVAILABILITY, FJQC, i, count, altName=user)
+      else:
+        _printChatItem(user, availability, None, Ent.CHAT_AVAILABILITY, csvPF, FJQC)
+    except (GAPI.notFound, GAPI.invalidArgument, GAPI.permissionDenied) as e:
+      exitIfChatNotConfigured(chat, kvList, str(e), i, count)
+    except GAPI.failedPrecondition:
+      userChatServiceNotEnabledWarning(user, i, count)
+  if csvPF:
+    csvPF.writeCSVfile('Chat Availability')
 
 def _getValidateEmojiName():
   name = getString(Cmd.OB_CHAT_EMOJI_NAME)
@@ -82290,6 +82425,7 @@ USER_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_CALENDAR:		printShowCalendars,
       Cmd.ARG_CALENDARACL:	printShowCalendarACLs,
       Cmd.ARG_CALSETTINGS:	printShowCalSettings,
+      Cmd.ARG_CHATAVAILABILITY:	printShowChatAvailability,
       Cmd.ARG_CHATEMOJI:	printShowChatEmojis,
       Cmd.ARG_CHATEVENT:	printShowChatEvents,
       Cmd.ARG_CHATMEMBER:	printShowChatMembers,
@@ -82409,6 +82545,7 @@ USER_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_CALENDAR:		printShowCalendars,
       Cmd.ARG_CALENDARACL:	printShowCalendarACLs,
       Cmd.ARG_CALSETTINGS:	printShowCalSettings,
+      Cmd.ARG_CHATAVAILABILITY:	printShowChatAvailability,
       Cmd.ARG_CHATEMOJI:	printShowChatEmojis,
       Cmd.ARG_CHATEVENT:	printShowChatEvents,
       Cmd.ARG_CHATMEMBER:	printShowChatMembers,
@@ -82557,6 +82694,7 @@ USER_COMMANDS_WITH_OBJECTS = {
       Cmd.ARG_CALATTENDEES:	updateCalendarAttendees,
       Cmd.ARG_CALENDAR:		updateCalendars,
       Cmd.ARG_CALENDARACL:	updateCalendarACLs,
+      Cmd.ARG_CHATAVAILABILITY:	updateChatAvailability,
       Cmd.ARG_CHATMEMBER:	deleteUpdateChatMember,
       Cmd.ARG_CHATMESSAGE:	updateChatMessage,
       Cmd.ARG_CHATSECTION:	createUpdateChatSection,

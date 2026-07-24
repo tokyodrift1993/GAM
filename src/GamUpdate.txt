@@ -1,3 +1,10 @@
+7.47.00
+
+Added commands to update|display a user's chat availability.
+
+* See: https://github.com/GAM-team/GAM/wiki/Users-Chat#manage-chat-user-availability
+* See: https://github.com/GAM-team/GAM/wiki/Users-Chat#display-chat-user-availability
+
 7.46.11
 
 Updated `gam <UserTypeEntity> update user` to handle the following error:

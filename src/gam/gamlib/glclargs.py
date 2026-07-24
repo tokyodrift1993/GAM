@@ -838,6 +838,7 @@ class GamCLArgs():
   ARG_CHANNELSKU = 'channelsku'
   ARG_CHANNELSKUS = 'channelskus'
   ARG_CHAT = 'chat'
+  ARG_CHATAVAILABILITY = 'chatavailability'
   ARG_CHATEMOJI = 'chatemoji'
   ARG_CHATEMOJIS = 'chatemojis'
   ARG_CHATEVENT = 'chatevent'
