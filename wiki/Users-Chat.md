@@ -7,6 +7,8 @@
 - [Chat Space Permissions](#chat-space-permissions)
 - [Manage Chat Spaces](#manage-chat-spaces)
 - [Display Chat Spaces](#display-chat-spaces)
+- [Manage Chat User Availability](#manage-chat-user-availability)
+- [Display Chat User Availability](#display-chat-user-availability)
 - [Manage Chat User Sections](#manage-chat-user-sections)
 - [Display Chat User Sections](#display-chat-user-sections)
 - [Manage Chat User Section Items](#manage-chat-user-section-items)
@@ -27,15 +29,16 @@ To use these commands you must update your service account authorization.
 ```
 gam user user@domain.com update serviceaccount
 
-[*]  3)  Chat API - Custom Emojis (supports readonly)
-[*]  4)  Chat API - Memberships (supports readonly)
-[*]  5)  Chat API - Memberships Admin (supports readonly)
-[*]  6)  Chat API - Messages (supports readonly)
-[*]  7)  Chat API - Spaces (supports readonly)
-[*]  8)  Chat API - Spaces Admin (supports readonly)
-[*]  9)  Chat API - Spaces Delete
-[*] 10)  Chat API - Spaces Delete Admin
-[*] 11)  Chat API - User Sections (supports readonly)
+[*]  4)  Chat API - Custom Emojis (supports readonly)
+[*]  5)  Chat API - Memberships (supports readonly)
+[*]  6)  Chat API - Memberships Admin (supports readonly)
+[*]  7)  Chat API - Messages (supports readonly)
+[*]  8)  Chat API - Spaces (supports readonly)
+[*]  9)  Chat API - Spaces Admin (supports readonly)
+[*] 10)  Chat API - Spaces Delete
+[*] 11)  Chat API - Spaces Delete Admin
+[*] 12)  Chat API - User Availability (supports readonly)
+[*] 13)  Chat API - User Sections (supports readonly)
 
 ```
 
@@ -459,6 +462,41 @@ When listing Chat Spaces, the Chat API does not return the `accessSettings` fiel
 add `showaccesssettings` to the command. This requires an additional Chat API call per chat space of type `SPACE`
 to get the `accessSettings` field.
 
+By default, Gam displays the information as columns of fields; the following option causes the output to be in JSON format,
+* `formatjson` - Display the fields in JSON format.
+
+By default, when writing CSV files, Gam uses a quote character of double quote `"`. The quote character is used to enclose columns that contain
+the quote character itself, the column delimiter (comma by default) and new-line characters. Any quote characters within the column are doubled.
+When using the `formatjson` option, double quotes are used extensively in the data resulting in hard to read/process output.
+The `quotechar <Character>` option allows you to choose an alternate quote character, single quote for instance, that makes for readable/processable output.
+`quotechar` defaults to `gam.cfg/csv_output_quote_char`. When uploading CSV files to Google, double quote `"` should be used.
+
+## Manage Chat User Availability
+
+### Update a user's chat availability.
+```
+gam <UserTypeEntity> update chatavailability
+        [(active (expiretime <Time>)|(ttl <Integer>) |
+         away |
+         (dnd (expiretime <Time>)|(ttl <Integer>))]
+        [(custom <Text> <EmojiString> (customexpiretime <Time>)|(customttl <Integer>)) |
+         clearcustom]
+        [formatjson]
+```
+## Display Chat User Availability
+### Display information about a user's chat availabiloty
+
+```
+gam <UserTypeEntity> show chatavailability
+        [formatjson]
+```
+By default, Gam displays the information as an indented list of keys and values.
+* `formatjson` - Display the fields in JSON format.
+```
+```
+gam <UserTypeEntity> print chatavailability [todrive <ToDriveAttribute>*]
+        [formatjson [quotechar <Character>]]
+```
 By default, Gam displays the information as columns of fields; the following option causes the output to be in JSON format,
 * `formatjson` - Display the fields in JSON format.
 
