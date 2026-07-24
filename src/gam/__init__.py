@@ -27291,7 +27291,8 @@ def printShowChatAvailability(users):
                               throwReasons=[GAPI.NOT_FOUND, GAPI.INVALID_ARGUMENT, GAPI.PERMISSION_DENIED, GAPI.FAILED_PRECONDITION],
                               name='users/me/availability')
       if 'customStatus' in availability:
-        availability['customStatus']['emoji']['hex'] = f'U+{ord(availability['customStatus']['emoji']['unicode']):X}'
+        emoji = availability['customStatus']['emoji']['unicode']
+        availability['customStatus']['emoji']['hex'] = f'U+{ord(emoji):X}'
       if not csvPF:
         _showChatItem(availability, Ent.CHAT_AVAILABILITY, FJQC, i, count, altName=user)
       else:
