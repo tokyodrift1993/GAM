@@ -492,7 +492,7 @@ gam <UserTypeEntity> show chatavailability
 ```
 By default, Gam displays the information as an indented list of keys and values.
 * `formatjson` - Display the fields in JSON format.
-```
+
 ```
 gam <UserTypeEntity> print chatavailability [todrive <ToDriveAttribute>*]
         [formatjson [quotechar <Character>]]
